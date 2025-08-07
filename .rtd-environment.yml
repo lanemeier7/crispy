@@ -1,11 +1,16 @@
 name: crispy
 
 channels:
-    - astropy
+  - conda-forge
 
 dependencies:
-    - astropy
-    - matplotlib
-    - numpy
-#   - pip:
-#       - dependency_from_pip
+  - python=3.11
+  - numpy>=1.19.0
+  - scipy>=1.5.0
+  - matplotlib>=3.3.0
+  - astropy>=4.0
+  - photutils>=1.0.0
+  - sphinx>=4.0
+  - sphinx_rtd_theme
+  - nbsphinx
+  - pip
