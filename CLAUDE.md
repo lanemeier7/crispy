@@ -39,39 +39,61 @@ cd docs
 make html
 ```
 
-### Testing
-**Environment Test:**
+### Testing 🧪
+
+**Modern pytest Framework (Recommended):**
 ```bash
 # Always activate crispy environment first
 conda activate crispy
+
+# Run all tests with beautiful emoji output
+pytest
+
+# Run specific test categories
+pytest -m unit          # Unit tests only
+pytest -m integration   # Integration tests only
+pytest -m working       # Known working tests
+pytest -m "not experimental"  # Skip experimental tests
+
+# Run with coverage
+pytest --cov=crispy
+
+# Run tests in parallel (faster)
+pytest -n auto
+
+# Verbose output with test names
+pytest -v
+
+# Run specific test files
+pytest tests/unit/test_core_functionality.py
+pytest tests/unit/test_working_functions.py
+```
+
+**Legacy Test Runners (Still Available):**
+```bash
+# Environment verification
 python test_environment.py
+
+# Original unit test runner  
+python run_unit_tests.py
 ```
 
-**Unit Test Runner (Recommended):**
-```bash
-conda activate crispy
-python run_unit_tests.py  # Runs all unit tests with proper error handling
-```
+**Test Categories:**
+- 🧪 **Unit Tests** (`tests/unit/`):
+  - `test_core_functionality.py` - Basic imports, parameters, Image class
+  - `test_working_functions.py` - Proven working functions (pixel solutions, flatfields, extraction)
+  - `test_experimental.py` - Functions with known issues (kernel loading, cutouts)
 
-**Individual Unit Tests:**
-Tests are located in `crispy/unitTests.py` and use a custom framework rather than pytest:
-```bash
-conda activate crispy
-python -c "
-from crispy.WFIRST import params
-from crispy.unitTests import testCreateFlatfield, testOptExt
-par = params.Params(codeRoot='./crispy')
-testCreateFlatfield(par, npix=64, Nspec=10)  # Smaller test
-"
-```
+- 🚀 **Integration Tests** (`tests/integration/`):
+  - `test_full_pipeline.py` - End-to-end workflows, multi-configuration tests
 
-**Working Tests (as of Python 3.11 update):**
-- ✅ testGenPixSol - Generates pixel solutions
-- ✅ testCreateFlatfield - Creates polychromatic flatfields  
-- ✅ testCrosstalk - Tests crosstalk functionality
-- ✅ testOptExt - Tests optimal extraction
-- ⚠️ testLoadKernels - Kernel interpolation (some numeric type issues)
-- ⚠️ testCutout - PSF cutout functionality (broadcasting issues)
+**Test Markers:**
+- ✅ `@pytest.mark.working` - Reliably working tests
+- ⚠️ `@pytest.mark.experimental` - Tests with known issues  
+- 🐌 `@pytest.mark.slow` - Long-running tests
+- 📁 `@pytest.mark.requires_data` - Tests needing reference files
+- 🧪 `@pytest.mark.unit` - Unit tests
+- 🚀 `@pytest.mark.integration` - Integration tests
 
 ## Core Architecture
 
