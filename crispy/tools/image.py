@@ -1,7 +1,4 @@
-try:
-    from astropy.io import fits
-except BaseException:
-    import pyfits as fits
+from astropy.io import fits
 
 import numpy as np
 from datetime import date

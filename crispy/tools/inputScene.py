@@ -2,10 +2,7 @@ import numpy as np
 import astropy.units as u
 import astropy.constants as c
 import astropy.analytic_functions as af
-try:
-    from astropy.io import fits
-except BaseException:
-    import pyfits as fits
+from astropy.io import fits
 from scipy.interpolate import interp1d
 import pkg_resources
 

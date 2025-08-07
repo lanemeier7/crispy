@@ -3,10 +3,7 @@
 import os
 import numpy as np
 from numpy import sqrt,arcsin
-try:
-    from astropy.io import fits
-except:
-    import pyfits as fits
+from astropy.io import fits
 
 
 class Params(object):

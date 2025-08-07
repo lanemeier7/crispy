@@ -35,7 +35,7 @@ def loadCoronagraph(name):
     '''
     Load single coronagraph description
     '''
-    if not isinstance(name,basestring):
+    if not isinstance(name, str):
         log.error('Need a string for the coronagraph name')
         raise
     else:

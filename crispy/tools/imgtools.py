@@ -1,10 +1,7 @@
 import numpy as np
 from scipy.signal import medfilt
 import scipy
-try:
-    from astropy.io import fits as pyf
-except BaseException:
-    import pyfits as pyf
+from astropy.io import fits as pyf
 from scipy.special import erf
 
 
@@ -162,9 +159,9 @@ def bowtie(
 
     if twomasks:
         if export is not None:
-            out = pyf.HDUList(pyf.PrimaryHDU(mask.astype(np.int)))
+            out = pyf.HDUList(pyf.PrimaryHDU(mask.astype(np.int32)))
             out.writeto(export + '1.fits', clobber=True)
-            out = pyf.HDUList(pyf.PrimaryHDU(mask2.astype(np.int)))
+            out = pyf.HDUList(pyf.PrimaryHDU(mask2.astype(np.int32)))
             out.writeto(export + '2.fits', clobber=True)
         return mask, mask2
     else:

@@ -1,7 +1,4 @@
-try:
-    from astropy.io import fits
-except BaseException:
-    import pyfits as fits
+from astropy.io import fits
 
 import numpy as np
 from crispy.tools.initLogger import getLogger
@@ -286,7 +283,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                         niter=niter, pixnoise=pixnoise, fitbkgnd=fitbkgnd)
 #                     model[y0:y1,x0:x1] += modelij
 #                     resid[y0:y1,x0:x1] -= modelij
-                except:
+                except Exception:
                     log.error('Fitting error at lenslet {:}'.format((i,j)))
                     cube[:, j, i] = np.NaN
                     ivarcube[:, j, i] = 0.
@@ -787,7 +784,7 @@ def _tag_psflets(shape, x, y, good, dx=8, dy=7):
 
     """
 
-    psflet_indx = np.zeros(shape, np.int)
+    psflet_indx = np.zeros(shape, np.int32)
     oldshape = x.shape
     x_int = (np.reshape(x + 0.5, -1)).astype(int)
     y_int = (np.reshape(y + 0.5, -1)).astype(int)
@@ -853,7 +850,7 @@ def _tag_hires_psflets(shape, x, y, good, dx=10, dy=10, upsample=3, npix=13):
 
     """
 
-    psflet_indx = np.zeros(shape, np.int)
+    psflet_indx = np.zeros(shape, np.int32)
     oldshape = x.shape
     x_int = (np.reshape((x + 0.5) * upsample, -1)).astype(int)
     y_int = (np.reshape((y + 0.5) * upsample, -1)).astype(int)

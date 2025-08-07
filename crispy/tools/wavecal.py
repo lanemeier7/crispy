@@ -4,10 +4,7 @@ from crispy.tools.par_utils import Task, Consumer
 import matplotlib as mpl
 import numpy as np
 from scipy import signal
-try:
-    from astropy.io import fits as fits
-except BaseException:
-    import pyfits as fits
+from astropy.io import fits as fits
 
 from crispy.tools.initLogger import getLogger
 log = getLogger('crispy')
@@ -23,11 +20,11 @@ from shutil import copy2
 import glob
 import warnings
 from scipy import ndimage, interpolate
-from photutils import DAOStarFinder
+from photutils.detection import DAOStarFinder
 from astropy.stats import sigma_clipped_stats
 from scipy.interpolate import griddata
 from crispy.tools.imgtools import gen_bad_pix_mask
-from photutils import centroid_com
+from photutils.centroids import centroid_com
 
 
 # from photutils import EPSFBuilder

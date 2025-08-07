@@ -3,10 +3,7 @@
 import os
 import numpy as np
 from numpy import sqrt, arcsin
-try:
-    from astropy.io import fits
-except BaseException:
-    import pyfits as fits
+from astropy.io import fits
 
 
 class Params(object):
@@ -48,6 +45,7 @@ class Params(object):
         self.philens = arcsin(1. / sqrt(self.interlace**2 + 1))
         self.lensletsampling = 1. / 2.  # lenslet size in lambda/D
         self.lensletlam = 770.     # Wavelength at which this is defined (nm)
+        self.pinhole = False       # Use a pinhole grid?
 
         ######################################################################
         # Detector stuff

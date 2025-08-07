@@ -9,10 +9,7 @@ Originally inspired by T. Brandt's code for CHARIS
 
 
 import numpy as np
-try:
-    from astropy.io import fits as pyf
-except BaseException:
-    import pyfits as pyf
+from astropy.io import fits as pyf
 import time
 import matplotlib.pyplot as plt
 from crispy.tools.image import Image
@@ -29,23 +26,7 @@ import glob
 import astropy.units as u
 from astropy.stats import sigma_clipped_stats
 
-# the following code snippet is supposed to deal with the basestring having
-# disappeared in Python 3
-import types
-try:
-    unicode = unicode
-except NameError:
-    # 'unicode' is undefined, must be Python 3
-    str = str
-    unicode = str
-    bytes = bytes
-    basestring = (str,bytes)
-else:
-    # 'unicode' exists, must be Python 2
-    str = str
-    unicode = unicode
-    bytes = str
-    basestring = basestring
+# Python 3 - basestring is now str
 
 
 from crispy.tools.initLogger import getLogger
@@ -381,7 +362,7 @@ def reduceIFSMap(
             
 
 
-    if isinstance(IFSimageName, basestring):
+    if isinstance(IFSimageName, str):
         IFSimage = Image(filename=IFSimageName)
         reducedName = IFSimageName.split('/')[-1].split('.')[0]
     else:
@@ -578,7 +559,7 @@ def reduceIFSMapList(
     log.info('Elapsed time: %fs' % (time.time() - start))
 
 def getQE(par,wavelist):
-    if isinstance(par.QE, basestring):
+    if isinstance(par.QE, str):
         loadQE = np.loadtxt(par.codeRoot + "/" + par.QE)
         QEinterp = interp1d(loadQE[:, 0], loadQE[:, 1])
         QEvals = QEinterp(wavelist)

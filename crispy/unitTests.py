@@ -4,10 +4,7 @@ from crispy.tools.initLogger import getLogger
 log = getLogger('crispy')
 import matplotlib.pyplot as plt
 from crispy.tools.image import Image
-try:
-    from astropy.io import fits
-except:
-    import pyfits as fits
+from astropy.io import fits
 from crispy.tools.locate_psflets import PSFLets
 from crispy.tools.reduction import get_cutout,fit_cutout,calculateWaveList
 from crispy.IFS import polychromeIFS
@@ -62,7 +59,7 @@ def testCutout(par,fname,lensX = 0,lensY = 0, dy=2.5):
         xlist += [_x]    
         ylist += [_y]    
     
-    if isinstance(fname,basestring):
+    if isinstance(fname, str):
         im = Image(filename = fname)
     else:
         im = Image(data=fname)
@@ -97,7 +94,7 @@ def testFitCutout(par,fname,lensX, lensY, mode='lstsq',ivar=False, niter=3, pixn
         xlist += [_x]    
         ylist += [_y]    
     
-    if isinstance(fname,basestring):
+    if isinstance(fname, str):
         im = Image(filename = fname)
     else:
         im = Image(data=fname)
@@ -123,7 +120,7 @@ def testOptExt(par,im, lensX, lensY, smoothandmask=True, delt_y=5):
     Nmax = PSFlet_tool.nlam_max
     try:
         sig = fits.open(par.wavecalDir + 'PSFwidths.fits')[0].data
-    except:
+    except (IOError, FileNotFoundError, KeyError):
         log.warning("No PSFLet widths found - assuming critical samping at central wavelength")
         sig=par.FWHM/2.35*np.ones(xindx.shape)
     
@@ -143,9 +140,12 @@ def testOptExt(par,im, lensX, lensY, smoothandmask=True, delt_y=5):
     
     good = PSFlet_tool.good
 
+    # Initialize output variables
+    outspec = np.zeros(lamlist.shape)
+    outvar = np.ones(lamlist.shape)
     
     i =lensX
-    j =lensX
+    j =lensY  # Fix: should be lensY not lensX
     
     if good[i,j]:
         _x = xindx[i, j, :PSFlet_tool.nlam[i, j]]
@@ -184,7 +184,7 @@ def testGenPixSol(par):
     allcoef = np.loadtxt(par.wavecalDir + "lamsol.dat")[:, 1:]
 
     psftool.geninterparray(lamlist, allcoef)
-    psftool.genpixsol(lamlist,allcoef)
+    psftool.genpixsol(par, lamlist, allcoef)
     psftool.savepixsol(outdir = par.exportDir)
 
 
@@ -229,14 +229,14 @@ def testCreateFlatfield(par,pixsize = 0.1,
     inCube = fits.HDUList(fits.PrimaryHDU(inputCube.astype(np.float32)))
     inCube[0].header['LAM_C'] = np.median(lam_midpts)/1000.
     inCube[0].header['PIXSIZE'] = pixsize
-    inCube.writeto(par.unitTestsOutputs+'/flatfield_input.fits',clobber=True)
+    inCube.writeto(par.unitTestsOutputs+'/flatfield_input.fits',overwrite=True)
     detectorFrame = polychromeIFS(par,lam_midpts,inCube[0],parallel=True,wavelist_endpts=lam_endpts,QE=useQE)
     detectorFrame = np.random.poisson(detectorFrame*maxflux/np.amax(detectorFrame)+bg)-bg
     Image(data=detectorFrame,header=par.hdr).write(par.unitTestsOutputs+'/'+outname,clobber=True)
     
 
 import scipy
-from scipy.ndimage.filters import gaussian_filter1d
+from scipy.ndimage import gaussian_filter1d
 def testCrosstalk(par,pixsize = 0.1, npix = 512, pixval = 1.,Nspec=45,outname='crosstalk.fits',useQE=True,method='optext'):
     '''
     Creates a polychromatic flatfield
@@ -275,7 +275,7 @@ def testCrosstalk(par,pixsize = 0.1, npix = 512, pixval = 1.,Nspec=45,outname='c
     inCube = fits.HDUList(fits.PrimaryHDU(inputCube.astype(np.float32)))
     inCube[0].header['LAM_C'] = np.median(lam_midpts)/1000.
     inCube[0].header['PIXSIZE'] = pixsize
-    inCube.writeto(par.unitTestsOutputs+'/crosstalk_input.fits',clobber=True)
+    inCube.writeto(par.unitTestsOutputs+'/crosstalk_input.fits',overwrite=True)
     detectorFrame = polychromeIFS(par,lam_midpts,inCube[0],parallel=True,wavelist_endpts=lam_endpts,QE=useQE,noRot=True)
     Image(data=detectorFrame,header=par.hdr).write(par.unitTestsOutputs+'/'+outname,clobber=True)
 

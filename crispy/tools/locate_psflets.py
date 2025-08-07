@@ -1,10 +1,7 @@
 #!/usr/bin/env python
 
 import numpy as np
-try:
-    from astropy.io import fits
-except BaseException:
-    import pyfits as fits
+from astropy.io import fits
 import copy
 from scipy import signal, ndimage, optimize, interpolate
 from crispy.tools.image import Image
@@ -101,7 +98,7 @@ class PSFLets:
         out.append(fits.PrimaryHDU(self.nlam.astype(int)))
         out.append(fits.PrimaryHDU(self.good.astype(int)))
         try:
-            out.writeto(outfile, clobber=True)
+            out.writeto(outfile, overwrite=True)
         except BaseException:
             raise
 
@@ -376,7 +373,7 @@ class PSFLets:
 
         x = np.zeros(tuple(list(xindx.shape) + [1000]))
         y = np.zeros(x.shape)
-        nlam = np.zeros(xindx.shape, np.int)
+        nlam = np.zeros(xindx.shape, np.int32)
         lam_out = np.zeros(y.shape)
         good = np.ones(xindx.shape)
         
@@ -410,7 +407,7 @@ class PSFLets:
                 else:
                     try:
                         tck_y = interpolate.splrep(pix_y, interp_lam, k=3, s=0)
-                    except:
+                    except Exception:
                         good[ix, iy] = 0
                         log.error('Error on wavelength calibration for lenslet ({:})'.format((ix,iy)))
 

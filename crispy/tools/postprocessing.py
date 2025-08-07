@@ -7,10 +7,7 @@ from crispy.IFS import reduceIFSMap, polychromeIFS
 from crispy.tools.initLogger import getLogger
 log = getLogger('crispy')
 from crispy.tools.image import Image
-try:
-    from astropy.io import fits
-except BaseException:
-    import pyfits as fits
+from astropy.io import fits
 from time import time
 import os
 from crispy.tools.detector import averageDetectorReadout, averageDetectorReadoutParallel, readDetector, calculateDark
@@ -1732,9 +1729,9 @@ def construct_mflib(par, planet_cube, threshold, lamc, BW, outdir, mask,
     # save the matched filter library but also the corresponding coordinates,
     # necessary for unpacking
     outkey = fits.HDUList(fits.PrimaryHDU(mflib))
-    outkey.append(fits.PrimaryHDU(mask.astype(np.int)))
-    outkey.append(fits.PrimaryHDU(xlist.astype(np.int)))
-    outkey.append(fits.PrimaryHDU(ylist.astype(np.int)))
+    outkey.append(fits.PrimaryHDU(mask.astype(np.int32)))
+    outkey.append(fits.PrimaryHDU(xlist.astype(np.int32)))
+    outkey.append(fits.PrimaryHDU(ylist.astype(np.int32)))
     outkey.writeto(outdir + '/' + outname, clobber=True)
 
 
