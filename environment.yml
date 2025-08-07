@@ -18,3 +18,11 @@ dependencies:
   - pip
   # Additional development tools
   - git
+  # Testing framework
+  - pytest>=7.0
+  - pytest-cov
+  - pytest-xdist
+  - pytest-mock
+  - pip:
+    - pytest-emoji
+    - pytest-sugar

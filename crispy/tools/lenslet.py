@@ -44,7 +44,14 @@ def processImagePlane(par, imagePlane, noRot=False):
     ypad = ydim - imagePlane.shape[1]
     xpad //= 2
     ypad //= 2
-    paddedImagePlane[xpad:-xpad, ypad:-ypad] = imagePlane
+    
+    # Calculate exact start and end indices to avoid broadcasting errors
+    x_start = xpad
+    x_end = x_start + imagePlane.shape[0]
+    y_start = ypad  
+    y_end = y_start + imagePlane.shape[1]
+    
+    paddedImagePlane[x_start:x_end, y_start:y_end] = imagePlane
 
     if noRot:
         imagePlaneRot = paddedImagePlane.copy()
