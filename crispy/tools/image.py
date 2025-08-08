@@ -2,6 +2,7 @@ from astropy.io import fits
 
 import numpy as np
 from datetime import date
+import copy
 import logging
 from crispy.tools.initLogger import getLogger
 log = getLogger('crispy')
@@ -35,6 +36,20 @@ class Image:
 
         if data is None and filename != '':
             self.load(filename)
+
+    def copy(self):
+        """
+        Return a deep copy of the Image instance.
+        """
+        return Image(
+            filename=self.filename,
+            data=copy.deepcopy(self.data),
+            ivar=copy.deepcopy(self.ivar),
+            header=copy.deepcopy(self.header),
+            extraheader=copy.deepcopy(self.extraheader)
+        )
+
+    
 
     def load(self, filename, loadbadpixmap=False):
         """
