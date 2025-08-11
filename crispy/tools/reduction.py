@@ -126,7 +126,7 @@ def testReduction(par, name, ifsimage):
                 else:
                     cube[iwav, j, i] = np.NaN
 
-    fits.PrimaryHDU(cube).writeto(name + '.fits', clobber=True)
+    fits.PrimaryHDU(cube).writeto(name + '.fits', overwrite=True)
     return cube
 
 
@@ -448,7 +448,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     out.append(fits.PrimaryHDU(cube.ivar, par.hdr))
     out.append(fits.PrimaryHDU(None, ifsimage.extraheader))
     if fitbkgnd: out.append(fits.PrimaryHDU(dc_offset, par.hdr))
-    out.writeto(name + '.fits', clobber=True)
+    out.writeto(name + '.fits', overwrite=True)
 
     Image(
         data=resid,

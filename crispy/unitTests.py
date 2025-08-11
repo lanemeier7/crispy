@@ -232,7 +232,7 @@ def testCreateFlatfield(par,pixsize = 0.1,
     inCube.writeto(par.unitTestsOutputs+'/flatfield_input.fits',overwrite=True)
     detectorFrame = polychromeIFS(par,lam_midpts,inCube[0],parallel=True,wavelist_endpts=lam_endpts,QE=useQE)
     detectorFrame = np.random.poisson(detectorFrame*maxflux/np.amax(detectorFrame)+bg)-bg
-    Image(data=detectorFrame,header=par.hdr).write(par.unitTestsOutputs+'/'+outname,clobber=True)
+    Image(data=detectorFrame,header=par.hdr).write(par.unitTestsOutputs+'/'+outname,overwrite=True)
     
 
 import scipy
@@ -277,5 +277,5 @@ def testCrosstalk(par,pixsize = 0.1, npix = 512, pixval = 1.,Nspec=45,outname='c
     inCube[0].header['PIXSIZE'] = pixsize
     inCube.writeto(par.unitTestsOutputs+'/crosstalk_input.fits',overwrite=True)
     detectorFrame = polychromeIFS(par,lam_midpts,inCube[0],parallel=True,wavelist_endpts=lam_endpts,QE=useQE,noRot=True)
-    Image(data=detectorFrame,header=par.hdr).write(par.unitTestsOutputs+'/'+outname,clobber=True)
+    Image(data=detectorFrame,header=par.hdr).write(par.unitTestsOutputs+'/'+outname,overwrite=True)
 

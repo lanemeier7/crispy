@@ -188,12 +188,12 @@ def process_SPC_IFS(par,
                 reffile = filelist[index]
                 if index < n_ref_star_imgs:
                     Image(data=result, header=par.hdr).write(outdir_time_series + '/' + \
-                          reffile.split('/')[-1].split('.')[0] + '_refstar_IFS.fits', clobber=True)
+                          reffile.split('/')[-1].split('.')[0] + '_refstar_IFS.fits', overwrite=True)
                     ref_outlist.append(
                         outdir_time_series + '/' + reffile.split('/')[-1].split('.')[0] + '_refstar_IFS.fits')
                 else:
                     Image(data=result, header=par.hdr).write(outdir_time_series + '/' + \
-                          reffile.split('/')[-1].split('.')[0] + '_targetstar_IFS.fits', clobber=True)
+                          reffile.split('/')[-1].split('.')[0] + '_targetstar_IFS.fits', overwrite=True)
                     target_outlist.append(
                         outdir_time_series + '/' + reffile.split('/')[-1].split('.')[0] + '_targetstar_IFS.fits')
 
