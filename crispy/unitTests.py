@@ -230,7 +230,7 @@ def testCreateFlatfield(par,pixsize = 0.1,
     # Save the input flatfield cube to a file
     inCube = fits.HDUList(fits.PrimaryHDU(inputCube.astype(np.float32)))
     inCube[0].header['LAM_C'] = np.median(lam_midpts)/1000. #Save central wavelength in microns to the header
-    inCube[0].header['PIXSIZE'] = pixsize
+    inCube[0].header['PIXSIZE'] = pixsize # Save pixel size in units of lambda/D
     inCube.writeto(par.unitTestsOutputs+'/flatfield_input.fits',overwrite=True)
 
     # Now pass the input cube through the IFS simulator and save the output
