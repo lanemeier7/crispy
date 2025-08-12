@@ -178,27 +178,29 @@ def polychromeIFS(par, inWavelist, inputcube,
     if lam_arr is None:
         lam_arr = np.loadtxt(par.wavecalDir + "lamsol.dat")[:, 0]
 
-    hires_arrs = []
+    hires_arrs = [] # TODO, Add a comment that describes what this variable is supposed to represent. Rename all occurence of this variable to 'high_res_arrays'  
     if par.gaussian:
         for i in range(len(lam_arr)):
-            hiresarr = get_sim_hires(par, lam_arr[i])
+            hiresarr = get_sim_hires(par, lam_arr[i]) # TODO rename all occurences of this variable to 'high_res_array'
             hires_arrs += [hiresarr]
         log.info('Creating Gaussian PSFLet templates')
         upsample=10
     else:
         try:
-            hires_list = np.sort(
-                glob.glob(par.wavecalDir + 'hires_psflets_lam???.fits'))
+            hires_list = np.sort(glob.glob(par.wavecalDir + 'hires_psflets_lam???.fits'))
             hires_arrs = [pyf.getdata(filename) for filename in hires_list]
             log.info('Loaded PSFLet templates')
         except BaseException:
             log.error('Failed loading the PSFLet templates')
             raise
 
+    # Reinitialize the input cube, which we will fill out one layer (wavelength) at a time
     inputCube = []
 
+    # Fill out the polyimage array
     if not parallel:
         for i in range(len(waveList)):
+            # TODO, add an informational comment about what imagePlaneRot represents. 
             imagePlaneRot = (wavelist_endpts[i + 1] - wavelist_endpts[i]) * \
                 processImagePlane(par, interpolatedInputCube.data[i], noRot)
             inputCube += [imagePlaneRot]

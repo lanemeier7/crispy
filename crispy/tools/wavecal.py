@@ -375,6 +375,8 @@ def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, renorm=True):
     monochromatic frames. This version of the function uses the perfect
     knowledge of the Gaussian PSFLet. Only valid if par.gaussian=True.
     All PSFLets are the same across the entire FOV
+
+    # TODO improve this docstring with Numpy style
     """
 
     hires_arr = np.zeros((nsubarr, nsubarr, upsample *
