@@ -198,7 +198,9 @@ def testCreateFlatfield(par,pixsize = 0.1,
                         maxflux=400,
                         bg=10):
     '''
-    Creates a polychromatic flatfield
+    Creates a polychromatic flatfield 
+    #"And then pass it through the IFS? I feel like that makes the name of this function misleading.
+    # Maybe it should be broken up into two functions titled 'testCreateFlatfieldCube' and 'testProcessFlatfieldCube' " - Evan Bray 2025/08/12
     
     Parameters
     ----------
@@ -218,20 +220,22 @@ def testCreateFlatfield(par,pixsize = 0.1,
         Whether to take into account the wavelength-dependent QE of the detector
     
     '''
-    
+    # Calculate the wavelengths of the flatfield cube and create the flatfield cube
     lam_midpts,lam_endpts = calculateWaveList(par,Nspec=Nspec,method=method)
     inputCube = np.ones((len(lam_midpts),npix,npix),dtype=np.float32)
     inputCube *= pixval
-    # for i in range(len(lam_midpts)):
-    #     inputCube[i,:,:]*=pixval #/lam_midpts[i]
     
-    par.saveDetector=False
+    par.saveDetector=False # What is this toggling off?
+
+    # Save the input flatfield cube to a file
     inCube = fits.HDUList(fits.PrimaryHDU(inputCube.astype(np.float32)))
-    inCube[0].header['LAM_C'] = np.median(lam_midpts)/1000.
+    inCube[0].header['LAM_C'] = np.median(lam_midpts)/1000. #Save central wavelength in microns to the header
     inCube[0].header['PIXSIZE'] = pixsize
     inCube.writeto(par.unitTestsOutputs+'/flatfield_input.fits',overwrite=True)
+
+    # Now pass the input cube through the IFS simulator and save the output
     detectorFrame = polychromeIFS(par,lam_midpts,inCube[0],parallel=True,wavelist_endpts=lam_endpts,QE=useQE)
-    detectorFrame = np.random.poisson(detectorFrame*maxflux/np.amax(detectorFrame)+bg)-bg
+    detectorFrame = np.random.poisson(detectorFrame*maxflux/np.amax(detectorFrame)+bg)-bg #Add some Poisson noise
     Image(data=detectorFrame,header=par.hdr).write(par.unitTestsOutputs+'/'+outname,overwrite=True)
     
 
