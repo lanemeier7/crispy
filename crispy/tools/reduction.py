@@ -156,6 +156,7 @@ def calculateWaveList(par, lam_list=None, Nspec=None, method='lstsq'):
             Wavelengths at the edges of each bin
     '''
     if lam_list is None:
+        log.info(f'Reading in lam_list from {par.wavecalDir}lamsol.dat')
         lamlist = np.loadtxt(par.wavecalDir + "lamsol.dat")[:, 0]
     else:
         lamlist = lam_list

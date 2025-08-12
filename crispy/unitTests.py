@@ -221,10 +221,10 @@ def testCreateFlatfield(par,pixsize = 0.1,
     
     lam_midpts,lam_endpts = calculateWaveList(par,Nspec=Nspec,method=method)
     inputCube = np.ones((len(lam_midpts),npix,npix),dtype=np.float32)
+    inputCube *= pixval
+    # for i in range(len(lam_midpts)):
+    #     inputCube[i,:,:]*=pixval #/lam_midpts[i]
     
-    for i in range(len(lam_midpts)):
-        inputCube[i,:,:]*=pixval #/lam_midpts[i]
-        
     par.saveDetector=False
     inCube = fits.HDUList(fits.PrimaryHDU(inputCube.astype(np.float32)))
     inCube[0].header['LAM_C'] = np.median(lam_midpts)/1000.
