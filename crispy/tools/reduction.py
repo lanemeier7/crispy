@@ -443,7 +443,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     else:
         cube = Image(data=cube, ivar=ivarcube)
 
-    # Image(data=cube.data,ivar=ivarcube,header=par.hdr,extraheader=ifsimage.extraheader).write(name+'.fits',clobber=True)
+    # Image(data=cube.data,ivar=ivarcube,header=par.hdr,extraheader=ifsimage.extraheader).write(name+'.fits',overwrite=True)
     out = fits.HDUList(fits.PrimaryHDU(None, par.hdr))
     out.append(fits.PrimaryHDU(cube.data, par.hdr))
     out.append(fits.PrimaryHDU(cube.ivar, par.hdr))
@@ -457,20 +457,20 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         extraheader=ifsimage.extraheader).write(
         name +
         '_resid.fits',
-        clobber=True)
+        overwrite=True)
     Image(
         data=model,
         header=par.hdr,
         extraheader=ifsimage.extraheader).write(
         name +
         '_model.fits',
-        clobber=True)
+        overwrite=True)
     Image(
         data=chisq,
         header=par.hdr).write(
         name +
         '_chisq.fits',
-        clobber=True)
+        overwrite=True)
     if fitbkgnd:
         Image(
             data=dc_offset,
@@ -478,7 +478,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
             extraheader=ifsimage.extraheader).write(
             name +
             '_offsets.fits',
-            clobber=True)
+            overwrite=True)
     if hires:
         Image(
             data=hires_model,
@@ -486,7 +486,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
             extraheader=ifsimage.extraheader).write(
             name +
             '_hires_model.fits',
-            clobber=True)
+            overwrite=True)
     if returnall:
         return cube, model, resid
     else:
@@ -923,12 +923,12 @@ def intOptimalExtract(par, name, IFSimage, smoothandmask=True, sum=False):
         lam_midpts,
         smoothandmask=smoothandmask,
         sum=sum)
-    # datacube.write(name+'.fits',clobber=True)
+    # datacube.write(name+'.fits',overwrite=True)
     out = fits.HDUList(fits.PrimaryHDU(None, par.hdr))
     out.append(fits.PrimaryHDU(datacube.data, par.hdr))
     out.append(fits.PrimaryHDU(datacube.ivar, par.hdr))
     out.append(fits.PrimaryHDU(None, datacube.extraheader))
-    out.writeto(name + '.fits', clobber=True)
+    out.writeto(name + '.fits', overwrite=True)
 
     return datacube
 

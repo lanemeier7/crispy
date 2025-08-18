@@ -357,7 +357,7 @@ def reduceIFSMap(
         else:
             reducedName = name
 
-    mean, median, std = sigma_clipped_stats(IFSimage.data, sigma=3.0, iters=5)
+    mean, median, std = sigma_clipped_stats(IFSimage.data, sigma=3.0, maxiters=5)
     log.info("Mean, median, std: {:}".format((mean,median,std)))
     par.hdr.append(
         ('MEAN', mean, 'Mean of image'), end=True)

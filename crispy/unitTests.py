@@ -233,7 +233,7 @@ def testCreateFlatfield(par,pixsize = 0.1,
     inCube[0].header['PIXSIZE'] = pixsize # Save pixel size in units of lambda/D
     inCube.writeto(par.unitTestsOutputs+'/flatfield_input.fits',overwrite=True)
 
-    # Now pass the input cube through the IFS simulator and save the output
+    # Pass the input cube through the IFS simulator and save the output
     detectorFrame = polychromeIFS(par,lam_midpts,inCube[0],parallel=True,wavelist_endpts=lam_endpts,QE=useQE)
     detectorFrame = np.random.poisson(detectorFrame*maxflux/np.amax(detectorFrame)+bg)-bg #Add some Poisson noise
     Image(data=detectorFrame,header=par.hdr).write(par.unitTestsOutputs+'/'+outname,overwrite=True)

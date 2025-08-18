@@ -377,23 +377,33 @@ def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, renorm=True):
     All PSFLets are the same across the entire FOV
 
     # TODO improve this docstring with Numpy style
+    # TODO rename all instances of 'renorm' to 'normalize'
     """
 
+    # Allocate memory for the array that we will fill out one slice at a time
     hires_arr = np.zeros((nsubarr, nsubarr, upsample *
                           (npix + 1), upsample * (npix + 1)))
-    size = upsample * (npix + 1)
+    
+    size = upsample * (npix + 1) # Determine side length of the upsampled array
+
+    # Generate a grid of (X,Y) grid coordinates
     _x = np.arange(size) - size // 2
     _y = np.arange(size) - size // 2
     _x, _y = np.meshgrid(_x, _y)
-    sig = par.FWHM / 2.35 * upsample
-    sigma = sig * lam / par.FWHMlam
+
+    sig = par.FWHM / 2.355 * upsample # Calculate Gaussian sigma in units of pixels in the upsampled array
+    sigma = sig * lam / par.FWHMlam # Scale this sigma by the current wavelength
     psflet = (erf((_x + 0.5) / (np.sqrt(2) * sigma)) -
-              erf((_x - 0.5) / (np.sqrt(2) * sigma))) * \
-        (erf((_y + 0.5) / (np.sqrt(2) * sigma)) -
-         erf((_y - 0.5) / (np.sqrt(2) * sigma)))
+            erf((_x - 0.5) / (np.sqrt(2) * sigma))) * \
+            (erf((_y + 0.5) / (np.sqrt(2) * sigma)) -
+            erf((_y - 0.5) / (np.sqrt(2) * sigma)))
 
-    psflet *= upsample**2 / np.sum(psflet)
+    # Normalize the PSFLet, if desired
+    if renorm:
+        psflet *= upsample**2 / np.sum(psflet)
 
+    # Question for Maxime/Tim: What is the purpose of this section?
+    # When would you need a 4d array with nsubarr*nsubarr copies of a 2D 'psflet'?
     for i in range(nsubarr):
         for j in range(nsubarr):
             hires_arr[i, j] = psflet
