@@ -100,7 +100,7 @@ tests/unit/test_working_functions.py ✅.✅✅✅.✅✅
 ### Basic IFS Simulation
 ```python
 import numpy as np
-from crispy.WFIRST import params
+from crispy.configs.WFIRST import params
 from crispy.IFS import polychromeIFS
 
 # Load WFIRST parameters
@@ -117,11 +117,11 @@ detector_image = polychromeIFS(par, wavelengths, input_cube)
 ### Working with Different Instruments
 ```python
 # WFIRST configuration
-from crispy.WFIRST import params as wfirst_params
+from crispy.configs.WFIRST import params as wfirst_params
 wfirst_par = wfirst_params.Params()
 
 # PISCES configuration  
-from crispy.PISCES import params as pisces_params
+from crispy.configs.PISCES import params as pisces_params
 pisces_par = pisces_params.Params()
 
 print(f"WFIRST R = {wfirst_par.R}")  # R = 50

@@ -21,14 +21,7 @@ class Params(object):
         self.prefix = self.codeRoot + '/ReferenceFiles'
         self.exportDir = self.codeRoot + '/SimResults'
         self.unitTestsOutputs = self.codeRoot + '/unitTestsOutputs'
-#         self.wavecalDir = self.prefix+'/VARIAwavecal/'
-#         self.wavecalDir = self.prefix+'/HighSNRWavecal/'
-#         self.wavecalDir = self.prefix+'/wavecal/'
-#         self.wavecalDir = self.prefix + '/wavecalR50_660/'
         self.wavecalDir = self.prefix + '/wavecalR50_770/'
-#         self.wavecalDir = self.prefix+'/wavecalR50_660_SC/'
-#         self.wavecalName = 'VARIAcalCube.fits'
-#         self.wavecalName = 'LLTFcalCube.fits'
 #         self.wavecalName = 'simCalCube.fits'
         self.filelist = []
         self.lamlist = []

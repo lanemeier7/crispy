@@ -28,7 +28,7 @@ def test_data_dir():
 def wfirst_params():
     """Load WFIRST parameters for testing"""
     try:
-        from crispy.WFIRST import params
+        from crispy.configs.WFIRST import params
         par = params.Params(codeRoot=str(crispy_root / "crispy"))
         
         # Ensure output directories exist
@@ -43,7 +43,7 @@ def wfirst_params():
 def pisces_params():
     """Load PISCES parameters for testing"""
     try:
-        from crispy.PISCES import params
+        from crispy.configs.PISCES import params
         par = params.Params(codeRoot=str(crispy_root / "crispy"))
         
         # Ensure output directories exist

@@ -73,7 +73,7 @@ class TestBasicImports:
         # These should all work
         from crispy.tools.image import Image
         from crispy.tools.initLogger import getLogger
-        from crispy.WFIRST import params
+        from crispy.configs.WFIRST import params
         from crispy.IFS import polychromeIFS
         
         # Test logger

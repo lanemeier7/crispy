@@ -176,7 +176,7 @@ class TestErrorHandling:
     @pytest.mark.integration
     def test_missing_files_handling(self):
         """Test graceful handling of missing files 🚫"""
-        from crispy.WFIRST import params
+        from crispy.configs.WFIRST import params
         
         # Create params with non-existent directory
         try:

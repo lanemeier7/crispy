@@ -52,7 +52,7 @@ except ImportError as e:
     print("❌ Image class:", str(e))
 
 try:
-    from crispy.WFIRST import params
+    from crispy.configs.WFIRST import params
     par = params.Params(codeRoot='.')
     print("✅ WFIRST parameters loaded")
 except Exception as e:

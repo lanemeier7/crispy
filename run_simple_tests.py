@@ -16,7 +16,7 @@ def setup_test_environment():
     print("🔧 Setting up test environment...")
     
     try:
-        from crispy.WFIRST import params
+        from crispy.configs.WFIRST import params
         par = params.Params(codeRoot='./crispy')
         print("✅ WFIRST parameters loaded")
         
@@ -82,10 +82,10 @@ def test_parameter_loading(par):
         for config in configs:
             try:
                 if config == 'WFIRST':
-                    from crispy.WFIRST import params
+                    from crispy.configs.WFIRST import params
                     test_par = params.Params(codeRoot='./crispy')
                 elif config == 'PISCES':
-                    from crispy.PISCES import params
+                    from crispy.configs.PISCES import params
                     test_par = params.Params(codeRoot='./crispy')
                 
                 print(f"✅ {config} parameters loaded")
