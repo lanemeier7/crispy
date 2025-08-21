@@ -836,17 +836,12 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         for ix in np.arange(-7, 7, 0.5):
             for iy in np.arange(-9, 9, 0.5):
                 coef = initcoef(
-                    polyorder,
-                    x0=ix +
-                    xdim /
-                    2. -
-                    subshape,
-                    y0=iy +
-                    ydim /
-                    2. -
-                    subshape,
+                    order=polyorder,
+                    x0=ix + (xdim/2 - subshape),
+                    y0=iy + (ydim/2 - subshape),
                     scale=scale,
-                    phi=phi)
+                    phi=phi
+                )
                 newval = corrval(coef, x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s],
                                  subfiltered, polyorder, trimfrac)
                 if newval < bestval:

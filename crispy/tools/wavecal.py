@@ -947,7 +947,18 @@ def buildcalibrations(
         initcoef=None,
         readImgs=True):
     """
-    Master wavelength calibration function
+    Master wavelength calibration function that generates all files required to process IFS cubes.
+
+    This function performs the following key steps:
+    1. Locates PSFlets in monochromatic calibration images
+    2. Fits polynomial coefficients to describe PSFlet positions as a function of wavelength
+    3. Generates high-resolution models of the PSFlets using sampling diversity (if enabled)
+    4. Constructs polychromatic cubes for least-squares extraction
+    5. Measures PSFlet widths (if enabled)
+
+    The calibration process uses the sampling diversity in the monochromatic images to build
+    high-resolution models of the PSFlets. These models are then used to create polychromatic
+    cubes that represent how the PSFlets appear at different wavelengths across the detector.
 
     Parameters
     ----------
@@ -961,7 +972,7 @@ def buildcalibrations(
             use the files in par.lamlist
     order: int
             Order of the polynomial used to fit the PSFLet positions across the detector
-    genwavelengthsol: Boolean
+    genwavelengthsol: Boolean #TODO, rename all instances of this argument, in all files, to 'save_wavelength_solution'
             If True, generate the wavelength calibration. Creates a text file with all
             polynomial coefficients that best fit the PSFLet positions at each wavelength.
             If False, then load an already-generated file.
@@ -973,7 +984,9 @@ def buildcalibrations(
             monochromatic picture of the first file, to visually inspect the fitting results
     makehiresPSFlets: Boolean
             Whether or not to do a high-resolution fitting of the PSFs, using the sampling
-            diversity. This requires high-SNR monochromatic images.
+            diversity. This requires high-SNR monochromatic images. The high-resolution fitting
+            combines multiple slightly shifted PSFlet images to reconstruct a higher resolution
+            model of the PSF shape.
     makePolychrome: Boolean
             Whether or not to build the polychrome cube used in the least squares extraction
     makePSFWidths: Boolean
@@ -1049,66 +1062,68 @@ def buildcalibrations(
                     in the detector.
 
     """
-    outdir = par.wavecalDir
-
+    outdir = par.wavecalDir  # Directory to save wavelength calibration files
     if filelist is None:
         if par.filelist is None:
-            raise
+            raise ValueError("No filelist provided and par.filelist is None")
         else:
-            filelist = par.filelist
+            filelist = par.filelist  # List of calibration image filenames
     if lamlist is None:
         if par.lamlist is None:
-            raise
+            raise ValueError("No lamlist provided and par.lamlist is None")
         else:
-            lamlist = par.lamlist
+            lamlist = par.lamlist  # List of wavelengths corresponding to calibration images
 
-    lam1 = lamlist[0]
-    lam2 = lamlist[-1]
+    lam1 = lamlist[0]  # Shortest wavelength
+    lam2 = lamlist[-1]  # Longest wavelength
 
+    # If the output directory doesn't exist, create it
     try:
         os.makedirs(outdir)
     except OSError:
         if not os.path.isdir(outdir):
-            raise
+            raise OSError(f"Failed to create directory {outdir} and it is not an existing directory")
 
-    log.info("Building calibration files, placing results in " + outdir)
+    log.info("Building calibration files; placing results in " + outdir)
 
-    tstart = time.time()
-    coef = initcoef
-    allcoef = []
-    imlist = []
-    xlist = []
-    ylist = []
-    dylist = []
-    dxlist = []
-    snrlist = []
-    
-    halfsize=5
+    tstart = time.time()  # Start time for performance tracking
+    coef = initcoef  # Initial guess for polynomial coefficients
+    allcoef = []  # List to store polynomial coefficients for each wavelength
+    imlist = []  # List to store calibration images
+    xlist = []  # List to store x-coordinates of PSFlet centers
+    ylist = []  # List to store y-coordinates of PSFlet centers
+    dylist = []  # List to store y-offsets from polynomial fit for fine calibration
+    dxlist = []  # List to store x-offsets from polynomial fit for fine calibration
+    snrlist = []  # List to store SNR values for fine calibration
+
+    halfsize=5  # Half-size of search region around each PSFlet for fine calibration
 
 
+    # Get dimensions of the first calibration image and initialize a mask variable
     ysize, xsize = Image(filename=filelist[0]).data.shape
     mask = np.ones((ysize, xsize))
-    if apodize:
-        y = np.arange(ysize)
-        x = np.arange(xsize)
-        x -= xsize // 2
-        y -= ysize // 2
-        x, y = np.meshgrid(x, y)
 
-        r = np.sqrt(x**2 + y**2)
-        mask = (r < min(ysize, xsize) // 2)
+    # Define a a circular region inscribed in the mask
+    if apodize:
+        # Create coordinate grids centered at image center
+        y = np.arange(ysize) - ysize // 2
+        x = np.arange(xsize) - xsize // 2
+        x, y = np.meshgrid(x, y)
+        r = np.sqrt(x**2 + y**2)        # Calculate radial distance from center
+        mask = (r < min(ysize, xsize) // 2)        # Create circular mask with radius equal to half the smaller dimension
         
     if finecal:
         log.info('Implementing experimental fine calibration method - watch out for bugs!')
 
+    # Open up and process the images one at a time
     if readImgs:
-        for i, ifile in enumerate(filelist):
-            im = Image(filename=ifile)
-            # sets the inverse variance to be the mask
+        for i, filepath in enumerate(filelist):
+            im = Image(filename=filepath)
             mean, median, std = sigma_clipped_stats(im.data, sigma=3.0, iters=5)
     #         im.data -= median
             log.info('Mean, median, std: {:}'.format((mean, median, std)))
-        
+            
+    # sets the inverse variance to be the mask
     #         hpmask = gen_bad_pix_mask(im.data)
     #         mask *= hpmask
     #         mask *= (im.data-median>3*std)
