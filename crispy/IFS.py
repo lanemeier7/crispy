@@ -8,6 +8,7 @@ Originally inspired by T. Brandt's code for CHARIS
 import numpy as np
 from astropy.io import fits as pyf
 import time
+import os
 import matplotlib.pyplot as plt
 from crispy.tools.image import Image
 from crispy.tools.lenslet import processImagePlane, propagateLenslets
@@ -621,6 +622,11 @@ def createWavecalFiles(par, lamlist, dlam=1., flux=None, background=0.0):
     inCube[0].header['LAM_C'] = 0.5 * (lamlist[-1] + lamlist[0]) / 1000.
     inCube[0].header['PIXSIZE'] = 0.1
     filelist = []
+
+    # Check to see if the desired calibration wavelength directory exists. If not, create it. 
+    if os.path.exists(par.wavecalDir) is False:
+        os.mkdir(par.wavecalDir)
+
     for wav in lamlist:
         # note the argument lam_arr, necessary when computing things for the
         # first time
@@ -636,7 +642,7 @@ def createWavecalFiles(par, lamlist, dlam=1., flux=None, background=0.0):
             detectorFrame = np.random.poisson(flux*detectorFrame+background)
         filename = par.wavecalDir + 'det_%3d.fits' % (wav)
         filelist.append(filename)
-        Image(data=detectorFrame, header=par.hdr).write(filename)
+        Image(data=detectorFrame, header=par.hdr).write(filename, overwrite=True)
     par.lamlist = lamlist
     par.filelist = filelist
     return filelist

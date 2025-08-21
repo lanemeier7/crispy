@@ -21,7 +21,8 @@ class Params(object):
         self.prefix = self.codeRoot + '/ReferenceFiles'
         self.exportDir = self.codeRoot + '/SimResults'
         self.unitTestsOutputs = self.codeRoot + '/unitTestsOutputs'
-        self.wavecalDir = self.prefix + '/wavecalR50_770/'
+        # self.wavecalDir = self.prefix + '/wavecalR50_770/'
+        self.wavecalDir = self.prefix + '/testing/'
 #         self.wavecalName = 'simCalCube.fits'
         self.filelist = []
         self.lamlist = []
