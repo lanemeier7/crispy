@@ -440,7 +440,7 @@ def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, renorm=True):
 #     stars_tbl['x'] = peaks_tbl['x_peak']
 #     stars_tbl['y'] = peaks_tbl['y_peak']
 #     mean_val, median_val, std_val = sigma_clipped_stats(data, sigma=2.,
-#                                                         iters=None)
+#                                                         maxiters=None)
 #     data -= median_val
 #     nddata = NDData(data=data)
 #     stars = extract_stars(nddata, stars_tbl, size=npix)
@@ -1098,7 +1098,6 @@ def buildcalibrations(
 
     halfsize=5  # Half-size of search region around each PSFlet for fine calibration
 
-
     # Get dimensions of the first calibration image and initialize a mask variable
     ysize, xsize = Image(filename=filelist[0]).data.shape
     mask = np.ones((ysize, xsize))
@@ -1119,14 +1118,13 @@ def buildcalibrations(
     if readImgs:
         for i, filepath in enumerate(filelist):
             im = Image(filename=filepath)
-            mean, median, std = sigma_clipped_stats(im.data, sigma=3.0, iters=5)
-    #         im.data -= median
+            mean, median, std = sigma_clipped_stats(im.data, sigma=3.0, maxiters=5)
             log.info('Mean, median, std: {:}'.format((mean, median, std)))
             
-    # sets the inverse variance to be the mask
-    #         hpmask = gen_bad_pix_mask(im.data)
-    #         mask *= hpmask
-    #         mask *= (im.data-median>3*std)
+            # Set the inverse variance to be the mask
+            # hpmask = gen_bad_pix_mask(im.data)
+            # mask *= hpmask
+            # mask *= (im.data-median>3*std)
             imlist += [im]
             if genwavelengthsol:
                 ## CHARIS regular wavecal step

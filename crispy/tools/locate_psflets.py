@@ -438,7 +438,9 @@ class PSFLets:
 
 def initcoef(order, scale, phi, x0=0, y0=0):
     """
-    Create a set of coefficients including a rotation matrix plus zeros.
+    Generate a set of null-transformation coefficients, but fill out the elements 
+    corresponding to 0th order translation + rotation. The higher order correction terms
+    will get filled out at a later step. 
 
     Parameters
     ----------
@@ -660,12 +662,14 @@ def new_transform(x, y, order, coef):
     Y = np.dot(Ylist.T,Ycoefs)
     return X,Y
 
-
-def corrval(coef, x, y, filtered, order, trimfrac=0.1):
+# TODO, rename all instances of 'corrval' to 'score_correlation'
+def corrval(coef, x, y, input_image, order, trimfrac=0.1):
     """
-    Return the negative of the sum of the middle XX% of the PSFlet
-    spot fluxes (disregarding those with the most and the least flux
-    to limit the impact of outliers).  Analogous to the trimmed mean.
+    Given an array of (x,y) coordinates representing the PSFLet centers, 
+    determine the flux at each corresponding location in the input image. 
+    The negative sum of these fluxes shall represent the "correlation score" for this image, 
+    which we seek to minimize (i.e. a large negative number). When this is done, we know that
+    we have found an optimal set of transformation coefficients. 
 
     Parameters
     ----------
@@ -675,12 +679,12 @@ def corrval(coef, x, y, filtered, order, trimfrac=0.1):
         coordinates of lenslets
     y: ndarray
         coordinates of lenslets
-    filtered: ndarray
-        image convolved with gaussian PSFlet
+    input_image: ndarray
+        image from which flux values will be extracted
     order: int
         order of the polynomial fit
     trimfrac: float
-        fraction of outliers (high & low combined) to trim
+        fraction of outliers (high & low combined) to trim in the interest of removing outliers. 
         Default 0.1 (5% trimmed on the high end, 5% on the low end)
 
     Returns
@@ -695,7 +699,7 @@ def corrval(coef, x, y, filtered, order, trimfrac=0.1):
     #################################################################
 
     _x, _y = transform(x, y, order, coef)
-    vals = ndimage.map_coordinates(filtered, [_y, _x], mode='constant',
+    vals = ndimage.map_coordinates(input_image, [_y, _x], mode='constant',
                                    cval=np.nan, prefilter=False)
     vals_ok = vals[np.where(np.isfinite(vals))]
     
@@ -709,7 +713,7 @@ def corrval(coef, x, y, filtered, order, trimfrac=0.1):
        
     return score
 
-
+# TODO, is this function used anywhere in this repo? If not, comment it out. 
 def corrvalsum(coef, x, y, filtered, order, trimfrac=0.1,gsize=2):
     _x, _y = transform(x, y, order, coef)
     ydim,xdim = filtered.shape
@@ -738,7 +742,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
     """
     function locatePSFlets takes an Image class, assumed to be a
     monochromatic grid of spots with read noise and shot noise, and
-    returns the esimated positions of the spot centroids.  This is
+    returns the estimated positions of the spot centroids.  This is
     designed to constrain the domain of the PSF-let fitting later in
     the pipeline.
 
@@ -753,12 +757,12 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         for estimating the grid of centroids.  Should be close
         to the true value for the PSF-let spots.  Default 0.7.
     coef: list
-        initial guess of the coefficients of polynomial
-        coordinate transformation
+        initial guess of the coefficients of polynomial coordinate transformation
     trimfrac: float
         fraction of lenslet outliers (high & low
         combined) to trim in the minimization.  Default 0.1
         (5% trimmed on the high end, 5% on the low end)
+    # TODO, add argument definitions for the other arugments not listed here. 
 
     Returns
     -------
@@ -773,7 +777,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
 
     Notes
     -----
-    the coefficients, if not supplied, are initially set to the
+    The coefficients, if not supplied, are initially set to the
     known pitch angle and scale.  A loop then does a quick check to find
     reasonable offsets in x and y.  With all of the first-order polynomial
     coefficients set, the optimizer refines these and the higher-order
@@ -784,7 +788,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
     """
 
     #############################################################
-    # Convolve with a Gaussian, centroid the filtered image.
+    # Convolve the image with a Gaussian, apply a filter, then centroid on the PSFLets.
     #############################################################
 
     x = np.arange(-1 * int(3 * sig + 1), int(3 * sig + 1) + 1)
@@ -798,8 +802,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
 #             inImage.data * inImage.ivar, gaussian, mode='same')
 #         unfiltered /= signal.convolve2d(inImage.ivar,
 #                                         gaussian, mode='same') + 1e-10
-    unfiltered = signal.convolve2d(
-        inImage.data * mask, gaussian, mode='same')
+    unfiltered = signal.convolve2d(inImage.data * mask, gaussian, mode='same')
 
     filtered = ndimage.interpolation.spline_filter(unfiltered)
 
@@ -823,16 +826,16 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
     # fits on. The new dimensionality in both x and y is 2*subsize
     #############################################################
 
+    # Determine PSF location coefficients if they were not given
     if coef is None:
 
         log.info("Initializing PSFlet location transformation coefficients")
-        bestval = 0
-        subshape = xdim // 3
-        _s = x.shape[0] // 3
-        subfiltered = ndimage.interpolation.spline_filter(
-            unfiltered[subshape:-subshape, subshape:-subshape])
-#         for ix in np.arange(0, 14, 0.5):
-#             for iy in np.arange(0, 25, 0.5):
+        bestval = 0  # Initialize best correlation value
+        subshape = xdim // 3  # Define size of subimage for initial optimization
+        _s = x.shape[0] // 3  # Define slice size for subsampling lenslet grid
+        subfiltered = ndimage.interpolation.spline_filter(unfiltered[subshape:-subshape, subshape:-subshape])
+
+        # How did the bounds for this for-loop get determined? Something to do with the ~typical number of pixels between spots in a monochromatic image?
         for ix in np.arange(-7, 7, 0.5):
             for iy in np.arange(-9, 9, 0.5):
                 coef = initcoef(
@@ -850,11 +853,9 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         coef_opt = coefbest
         
 
-        log.info(
-            "Performing initial optimization of PSFlet location transformation coefficients for frame " +
-            inImage.filename)
-        res = optimize.minimize(corrval, coef_opt, args=(
-            x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s], subfiltered, polyorder, trimfrac), method='Powell')
+        log.info("Performing initial optimization of PSFlet location transformation coefficients for frame " + inImage.filename)
+        res = optimize.minimize(corrval, coef_opt, args=(x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s], 
+                                subfiltered, polyorder, trimfrac), method='Powell')
         coef_opt = res.x
 
         coef_opt[0] += subshape
