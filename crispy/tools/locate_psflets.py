@@ -904,34 +904,22 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
                     coefbest = copy.deepcopy(coef)
         coef_opt = coefbest
 
-    log.info(
-        "Performing final optimization of PSFlet location transformation coefficients for frame " +
-        inImage.filename)
-
-    res = optimize.minimize(
-        corrval,
-        coef_opt,
-        args=(
-            x,
-            y,
-            filtered,
-            polyorder,
-            trimfrac),
+    log.info("Performing final optimization of PSFlet location transformation coefficients for frame " + inImage.filename)
+    res = optimize.minimize(corrval, coef_opt,
+        args=(x, y, filtered, polyorder, trimfrac),
         method='Powell')
 
     coef_opt = res.x
     log.info('Array origin: {:}'.format((coef_opt[0],coef_opt[(polyorder + 1) * (polyorder + 2) // 2])))
 
     if not res.success:
-        log.info(
-            "Optimizing PSFlet location transformation coefficients may have failed for frame " +
-            inImage.filename)
+        log.info("Optimizing PSFlet location transformation coefficients may have failed for frame " + inImage.filename)
     _x, _y = transform(x, y, polyorder, coef_opt)
 
     #############################################################
     # Boolean: do the lenslet PSFlets lie within the detector?
     #############################################################
 
-    good = (_x > 5) * (_x < xdim - 5) * (_y > 5) * (_y < ydim - 5)
+    good_psflets = (_x > 5) * (_x < xdim - 5) * (_y > 5) * (_y < ydim - 5)
 
-    return [_x, _y, good, coef_opt]
+    return [_x, _y, good_psflets, coef_opt]
