@@ -690,13 +690,13 @@ def makeHires(
         log.info('Starting parallel computation')
         if not par.gaussian_hires:
             for i in range(len(lam)):
-#                 if finexy is None:
-#                     xpos, ypos = psftool.return_locations(
-#                         lam[i], allcoef, xindx, yindx)
-#                 else:
-#                     xpos, ypos = fine_transform(
-#                         lam[i], xindx, yindx, reflam, finexy[0], finexy[1])
-#                 if finexy is None:
+                # if finexy is None:
+                #     xpos, ypos = psftool.return_locations(
+                #         lam[i], allcoef, xindx, yindx)
+                # else:
+                #     xpos, ypos = fine_transform(
+                #         lam[i], xindx, yindx, reflam, finexy[0], finexy[1])
+                # if finexy is None:
                 xpos, ypos = psftool.return_locations(
                     lam[i], allcoef, xindx, yindx)
                 if finexy is not None:
@@ -767,12 +767,12 @@ def makeHires(
             if par.gaussian_hires:
                 hiresarr = get_sim_hires(par, lam[i], upsample, nsubarr)
             else:
-#                 if finexy is None:
-#                     xpos, ypos = psftool.return_locations(
-#                         lam[i], allcoef, xindx, yindx)
-#                 else:
-#                     xpos, ypos = fine_transform(
-#                         lam[i], xindx, yindx, reflam, finexy[0], finexy[1])
+                # if finexy is None:
+                #     xpos, ypos = psftool.return_locations(
+                #         lam[i], allcoef, xindx, yindx)
+                # else:
+                #     xpos, ypos = fine_transform(
+                #         lam[i], xindx, yindx, reflam, finexy[0], finexy[1])
                 xpos, ypos = psftool.return_locations(
                     lam[i], allcoef, xindx, yindx)
                 if finexy is not None:
@@ -806,13 +806,14 @@ def makeHires(
 
 
 from scipy.optimize import curve_fit
+
+
 def gauss(x, a, x0, sig,b):
     '''
     Simple gaussian function with usual inputs
     '''
     return b+a*np.exp(-(x-x0)**2/(2.*sig**2))
     
-
 
 def fit_monochromatic_cube( cube,
                             lamlist,
@@ -840,8 +841,10 @@ def fit_monochromatic_cube( cube,
                             vals,
                             p0=[np.amax(vals),lamlist[np.argmax(vals)],sigma_guess,0]
                             )
-    if returnAll: return popt,pcov
-    else: return popt[1],np.sqrt(pcov)
+    if returnAll: 
+        return popt,pcov
+    else: 
+        return popt[1],np.sqrt(pcov)
 
 
 def monochromatic_update(par, inImage, inLam, order=3, apodize=False):

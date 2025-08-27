@@ -4,6 +4,7 @@ import numpy as np
 from astropy.io import fits
 import copy
 from scipy import signal, ndimage, optimize, interpolate
+import matplotlib.pyplot as plt
 from crispy.tools.image import Image
 import glob
 import re
@@ -662,8 +663,8 @@ def new_transform(x, y, order, coef):
     Y = np.dot(Ylist.T,Ycoefs)
     return X,Y
 
-# TODO, rename all instances of 'corrval' to 'score_correlation'
-def corrval(coef, x, y, input_image, order, trimfrac=0.1):
+
+def corrval(coef, x, y, input_image, order, trimfrac=0.1, show_plots=False):
     """
     Given an array of (x,y) coordinates representing the PSFLet centers, 
     determine the flux at each corresponding location in the input image. 
@@ -686,6 +687,8 @@ def corrval(coef, x, y, input_image, order, trimfrac=0.1):
     trimfrac: float
         fraction of outliers (high & low combined) to trim in the interest of removing outliers. 
         Default 0.1 (5% trimmed on the high end, 5% on the low end)
+    show_plots: bool
+        If True, displays a plot of the input_image with _x and _y coordinates overlaid
 
     Returns
     -------
@@ -711,6 +714,22 @@ def corrval(coef, x, y, input_image, order, trimfrac=0.1):
         vals_sorted = np.sort(vals_ok)
         score = -1 * np.sum(vals_sorted)
        
+    if show_plots:
+        fig, ax = plt.subplots(figsize=(9,7))
+        im = ax.imshow(input_image, cmap='viridis')
+        scatter = ax.scatter(_x, _y, c='r', s=1)
+        ax.set_title(f"Coefficients:\n{[f'{c:.1f}' for c in coef]}", fontsize=10)
+        ax.set_xlim(0,input_image.shape[1])
+        ax.set_ylim(0,input_image.shape[0])
+        fig.colorbar(im)
+        # Add score textbox
+        props = dict(boxstyle='round', facecolor='white', alpha=1.0)
+        ax.text(0.95, 0.95, f'Score: {score:.2f}', transform=ax.transAxes,
+                verticalalignment='top', horizontalalignment='right', bbox=props)
+        fig.tight_layout()
+        plt.show()
+        plt.close('all')
+
     return score
 
 # TODO, is this function used anywhere in this repo? If not, comment it out. 
@@ -846,7 +865,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
                     phi=phi
                 )
                 newval = corrval(coef, x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s],
-                                 subfiltered, polyorder, trimfrac)
+                                 subfiltered, polyorder, trimfrac,show_plots=False)
                 if newval < bestval:
                     bestval = newval
                     coefbest = copy.deepcopy(coef)
