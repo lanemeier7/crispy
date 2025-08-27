@@ -849,7 +849,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
     if coef is None:
 
         log.info("Initializing PSFlet location transformation coefficients")
-        bestval = 0  # Initialize best correlation value
+        correlation_score_best = 0  # Initialize best correlation value
         subshape = xdim // 3  # Define size of subimage for initial optimization
         _s = x.shape[0] // 3  # Define slice size for subsampling lenslet grid
         subfiltered = ndimage.interpolation.spline_filter(unfiltered[subshape:-subshape, subshape:-subshape])
@@ -864,32 +864,32 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
                     scale=scale,
                     phi=phi
                 )
-                newval = corrval(coef, x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s],
+                correlation_score_current = corrval(coef, x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s],
                                  subfiltered, polyorder, trimfrac,show_plots=False)
-                if newval < bestval:
-                    bestval = newval
-                    coefbest = copy.deepcopy(coef)
-        coef_opt = coefbest
+                if correlation_score_current < correlation_score_best:
+                    correlation_score_best = correlation_score_current
+                    coef_current_best = copy.deepcopy(coef)
+        coef_optimized = coef_current_best
         
 
         log.info("Performing initial optimization of PSFlet location transformation coefficients for frame " + inImage.filename)
-        res = optimize.minimize(corrval, coef_opt, args=(x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s], 
+        res = optimize.minimize(corrval, coef_optimized, args=(x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s], 
                                 subfiltered, polyorder, trimfrac), method='Powell')
-        coef_opt = res.x
+        coef_optimized = res.x
 
-        coef_opt[0] += subshape
-        coef_opt[(polyorder + 1) * (polyorder + 2) // 2] += subshape
-        log.info('Array origin: {:}'.format((coef_opt[0],coef_opt[(polyorder + 1) * (polyorder + 2) // 2])))
+        coef_optimized[0] += subshape
+        coef_optimized[(polyorder + 1) * (polyorder + 2) // 2] += subshape
+        log.info('Array origin: {:}'.format((coef_optimized[0],coef_optimized[(polyorder + 1) * (polyorder + 2) // 2])))
 
     #############################################################
-    # If we have coefficients from last time, we assume that we
+    # If we have coefficients from last iteration, assume that we
     # are now at a slightly higher wavelength, so try out offsets
     # that are slightly to the right to get a good initial guess.
     #############################################################
 
     else:
         log.info("Initializing transformation coefficients with previous values")
-        bestval = 0
+        correlation_score_best = 0
         coefsave = list(coef[:])
 
         for ix in np.arange(-finesearch, finesearch, 0.2):
@@ -898,23 +898,23 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
                 coef[0] += ix
                 coef[(polyorder + 1) * (polyorder + 2) // 2] += iy
 
-                newval = corrval(coef, x, y, filtered, polyorder, trimfrac)
-                if newval < bestval:
-                    bestval = newval
-                    coefbest = copy.deepcopy(coef)
-        coef_opt = coefbest
+                correlation_score_current = corrval(coef, x, y, filtered, polyorder, trimfrac)
+                if correlation_score_current < correlation_score_best:
+                    correlation_score_best = correlation_score_current
+                    coef_current_best = copy.deepcopy(coef)
+        coef_optimized = coef_current_best
 
     log.info("Performing final optimization of PSFlet location transformation coefficients for frame " + inImage.filename)
-    res = optimize.minimize(corrval, coef_opt,
+    res = optimize.minimize(corrval, coef_optimized,
         args=(x, y, filtered, polyorder, trimfrac),
         method='Powell')
 
-    coef_opt = res.x
-    log.info('Array origin: {:}'.format((coef_opt[0],coef_opt[(polyorder + 1) * (polyorder + 2) // 2])))
+    coef_optimized = res.x
+    log.info('Array origin: {:}'.format((coef_optimized[0],coef_optimized[(polyorder + 1) * (polyorder + 2) // 2])))
 
     if not res.success:
         log.info("Optimizing PSFlet location transformation coefficients may have failed for frame " + inImage.filename)
-    _x, _y = transform(x, y, polyorder, coef_opt)
+    _x, _y = transform(x, y, polyorder, coef_optimized)
 
     #############################################################
     # Boolean: do the lenslet PSFlets lie within the detector?
@@ -922,4 +922,4 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
 
     good_psflets = (_x > 5) * (_x < xdim - 5) * (_y > 5) * (_y < ydim - 5)
 
-    return [_x, _y, good_psflets, coef_opt]
+    return [_x, _y, good_psflets, coef_optimized]
