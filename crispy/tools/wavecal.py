@@ -39,7 +39,7 @@ from photutils.centroids import centroid_com
 warnings.filterwarnings("ignore")
 
 
-def do_inspection(par, image, xpos, ypos, lam):
+def do_inspection(par, image, xpos, ypos, lam, display_plot=False):
     """
     Generate a plot of PSFlet positions overlaid on a calibration image.
 
@@ -49,6 +49,7 @@ def do_inspection(par, image, xpos, ypos, lam):
         xpos: 2D numpy array of x-positions of PSFlets in image-space
         ypos: 2D numpy array of y-positions of PSFlets in image-space
         lam: Wavelength of the calibration image
+        display_plot: Whether to display the plot interactively (default False)
 
     Saves a PNG image in the directory specified in the 'par' object showing 
     PSFlet positions as blue circles overlaid on the grayscale calibration image.
@@ -60,17 +61,27 @@ def do_inspection(par, image, xpos, ypos, lam):
                      for m in range(xg) for n in range(yg)])
     pos = (vals[:, 0], vals[:, 1])
     #aps = CircularAperture(pos, r=3)
+
+    # Temporarily turn off interactive plotting until this function is complete
+    if not display_plot:
+        plt.ioff()
+
     fig, ax = plt.subplots(figsize=(15, 15))
     mean = np.mean(image)
     std = np.std(image)
     norm = mpl.colors.Normalize(vmin=mean, vmax=mean + 5 * std)
-    ax.imshow(image, cmap='Greys', norm=norm, interpolation='nearest', origin='lower')
+    ax.imshow(image, cmap='gray_r', norm=norm, interpolation='nearest', origin='lower')
     for val in vals:
         circle = plt.Circle(val, 3, color='blue', lw=1, alpha=0.5)
         ax.add_artist(circle)
     #aps.plot(ax=ax,color='blue', lw=1, alpha=0.5)
     fig.savefig(par.wavecalDir + 'inspection_%3d.png' % (lam), dpi=300)
-    plt.close(fig)
+
+    if display_plot:
+        plt.show(block=False)
+        plt.close(fig)
+    else:
+        plt.ion()
 
 
 def make_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
