@@ -272,7 +272,7 @@ class PSFLets:
         interp_x, interp_y = transform(xindx, yindx, coeforder, coef)
 
         return interp_x, interp_y
-        
+
 #     def return_fine_locations(self, lam, xindx, yindx, xlistarr, ylistarr):
 #         '''
 #         Calculates the detector coordinates of lenslet located at `xindx`, `yindx`
@@ -297,7 +297,6 @@ class PSFLets:
 #             Y coordinate on the detector
 #         '''
 #         interp_x, interp_y = fine_transform(xindx, yindx, lam, xlistarr, ylistarr)
-        
 
     def genpixsol(
             self,
@@ -340,9 +339,9 @@ class PSFLets:
         ###################################################################
 
         if lam1 is None:
-            lam1 = np.amin(lam)# * 0.98
+            lam1 = np.amin(lam)  # * 0.98
         if lam2 is None:
-            lam2 = np.amax(lam)# * 1.02
+            lam2 = np.amax(lam)  # * 1.02
         interporder = order
 
         if self.interp_arr is None:
@@ -370,17 +369,16 @@ class PSFLets:
         if finexy is not None:
             interp_x += finexy[0]
             interp_y += finexy[1]
-        
 
         x = np.zeros(tuple(list(xindx.shape) + [1000]))
         y = np.zeros(x.shape)
         nlam = np.zeros(xindx.shape, np.int32)
         lam_out = np.zeros(y.shape)
         good = np.ones(xindx.shape)
-        
-        # SNR threshold
-        if finexy is not None: good *= finexy[2]>10
 
+        # SNR threshold
+        if finexy is not None:
+            good *= finexy[2] > 10
 
         for ix in range(xindx.shape[0]):
             for iy in range(xindx.shape[1]):
@@ -388,21 +386,21 @@ class PSFLets:
                 pix_x = interp_y[:, ix, iy]
 
                 if np.any(
-                    pix_x < borderpix) or np.any(
-                    pix_x > par.npix -
-                    borderpix) or np.any(
-                    pix_y < borderpix) or np.any(
-                    pix_y > par.npix -
-                    borderpix):
+                        pix_x < borderpix) or np.any(
+                        pix_x > par.npix -
+                        borderpix) or np.any(
+                        pix_y < borderpix) or np.any(
+                        pix_y > par.npix -
+                        borderpix):
                     good[ix, iy] = 0
                     continue
 
                 if pix_y[-1] < pix_y[0]:
-#                     try:
-#                         print ix,iy,pix_y[-1], pix_y[0]
-#                         tck_y = interpolate.splrep(
-#                             pix_y[::-1], interp_lam[::-1], k=1, s=0)
-#                     except BaseException:
+                    #                     try:
+                    #                         print ix,iy,pix_y[-1], pix_y[0]
+                    #                         tck_y = interpolate.splrep(
+                    #                             pix_y[::-1], interp_lam[::-1], k=1, s=0)
+                    #                     except BaseException:
                     good[ix, iy] = 0
 #                         raise
                 else:
@@ -410,7 +408,7 @@ class PSFLets:
                         tck_y = interpolate.splrep(pix_y, interp_lam, k=3, s=0)
                     except Exception:
                         good[ix, iy] = 0
-                        log.error('Error on wavelength calibration for lenslet ({:})'.format((ix,iy)))
+                        log.error('Error on wavelength calibration for lenslet ({:})'.format((ix, iy)))
 
                 if good[ix, iy]:
                     y1, y2 = [int(np.amin(pix_y)) + 1, int(np.amax(pix_y))]
@@ -429,10 +427,10 @@ class PSFLets:
             if np.all(y[:, :, nlam_max] == 0):
                 break
 
-        self.xindx = y[:, :, :nlam_max] # array of integer pixel indices along dispersion
-        self.yindx = x[:, :, :nlam_max] # array of floats indicating the cross. disp. axis
+        self.xindx = y[:, :, :nlam_max]  # array of integer pixel indices along dispersion
+        self.yindx = x[:, :, :nlam_max]  # array of floats indicating the cross. disp. axis
         self.nlam = nlam
-        self.lam_indx = lam_out[:, :, :nlam_max] # wavelengths at int. pixel indices
+        self.lam_indx = lam_out[:, :, :nlam_max]  # wavelengths at int. pixel indices
         self.nlam_max = np.amax(nlam)
         self.good = good
 
@@ -548,22 +546,22 @@ def transform(x, y, order, coef):
 
     return [_x, _y]
 
-def revealCoefs(coef,order):
+
+def revealCoefs(coef, order):
 
     i = 0
     s = 'i and j are the integer coordinates of the lenslets in the array\n'
-    s+='X coordinates:\n'
+    s += 'X coordinates:\n'
     for ix in range(order + 1):
         for iy in range(order - ix + 1):
-            s += '{:} * i^{:} j^{:} + \n'.format(coef[i],ix,iy)
+            s += '{:} * i^{:} j^{:} + \n'.format(coef[i], ix, iy)
             i += 1
     s += 'Y coordinates:\n'
     for ix in range(order + 1):
         for iy in range(order - ix + 1):
-            s += '{:} * i^{:} j^{:} + \n'.format(coef[i],ix,iy)
+            s += '{:} * i^{:} j^{:} + \n'.format(coef[i], ix, iy)
             i += 1
     return s
-
 
 
 def fine_transform(lam, x, y, reflam, xlistarr, ylistarr):
@@ -596,31 +594,30 @@ def fine_transform(lam, x, y, reflam, xlistarr, ylistarr):
     """
 
     if hasattr(lam, "__len__"):
-        _x = np.zeros((len(lam),x.shape[0],x.shape[1]))
-        _y = np.zeros((len(lam),y.shape[0],y.shape[1]))
+        _x = np.zeros((len(lam), x.shape[0], x.shape[1]))
+        _y = np.zeros((len(lam), y.shape[0], y.shape[1]))
 
         for i in range(x.shape[0]):
             for j in range(x.shape[1]):
-                tck = interpolate.splrep(reflam, xlistarr[:,i,j])
-                _x[:,i,j] = interpolate.splev(lam, tck, der=0)
-                tck = interpolate.splrep(reflam, ylistarr[:,i,j])
-                _y[:,i,j] = interpolate.splev(lam, tck, der=0)
-    
+                tck = interpolate.splrep(reflam, xlistarr[:, i, j])
+                _x[:, i, j] = interpolate.splev(lam, tck, der=0)
+                tck = interpolate.splrep(reflam, ylistarr[:, i, j])
+                _y[:, i, j] = interpolate.splev(lam, tck, der=0)
+
     else:
-        _x = np.zeros((x.shape[0],x.shape[1]))
-        _y = np.zeros((y.shape[0],y.shape[1]))
+        _x = np.zeros((x.shape[0], x.shape[1]))
+        _y = np.zeros((y.shape[0], y.shape[1]))
 
         for i in range(x.shape[0]):
             for j in range(x.shape[1]):
-                tck = interpolate.splrep(reflam, xlistarr[:,i,j])
-                _x[i,j] = interpolate.splev(lam, tck, der=0)
-                tck = interpolate.splrep(reflam, ylistarr[:,i,j])
-                _y[i,j] = interpolate.splev(lam, tck, der=0)
-        
-    
-    
+                tck = interpolate.splrep(reflam, xlistarr[:, i, j])
+                _x[i, j] = interpolate.splev(lam, tck, der=0)
+                tck = interpolate.splrep(reflam, ylistarr[:, i, j])
+                _y[i, j] = interpolate.splev(lam, tck, der=0)
+
     return [_x, _y]
-    
+
+
 def new_transform(x, y, order, coef):
     """
     Apply the coefficients given to transform the coordinates using
@@ -659,9 +656,9 @@ def new_transform(x, y, order, coef):
     ncoefs = (order + 1) * (order + 2) // 2
     Xcoefs = coef[:ncoefs]
     Ycoefs = coef[-ncoefs:]
-    X = np.dot(Xlist.T,Xcoefs)
-    Y = np.dot(Ylist.T,Ycoefs)
-    return X,Y
+    X = np.dot(Xlist.T, Xcoefs)
+    Y = np.dot(Ylist.T, Ycoefs)
+    return X, Y
 
 
 def corrval(coef, x, y, input_image, order, trimfrac=0.1, show_plots=False):
@@ -705,22 +702,22 @@ def corrval(coef, x, y, input_image, order, trimfrac=0.1, show_plots=False):
     vals = ndimage.map_coordinates(input_image, [_y, _x], mode='constant',
                                    cval=np.nan, prefilter=False)
     vals_ok = vals[np.where(np.isfinite(vals))]
-    
-    if trimfrac>0.0:
+
+    if trimfrac > 0.0:
         iclip = int(vals_ok.shape[0] * trimfrac // 2)
         vals_sorted = np.sort(vals_ok)
         score = -1 * np.sum(vals_sorted[iclip:-iclip])
     else:
         vals_sorted = np.sort(vals_ok)
         score = -1 * np.sum(vals_sorted)
-       
+
     if show_plots:
-        fig, ax = plt.subplots(figsize=(9,7))
+        fig, ax = plt.subplots(figsize=(9, 7))
         im = ax.imshow(input_image, cmap='viridis')
         scatter = ax.scatter(_x, _y, c='r', s=1)
         ax.set_title(f"Coefficients:\n{[f'{c:.1f}' for c in coef]}", fontsize=10)
-        ax.set_xlim(0,input_image.shape[1])
-        ax.set_ylim(0,input_image.shape[0])
+        ax.set_xlim(0, input_image.shape[1])
+        ax.set_ylim(0, input_image.shape[0])
         fig.colorbar(im)
         # Add score textbox
         props = dict(boxstyle='round', facecolor='white', alpha=1.0)
@@ -733,27 +730,28 @@ def corrval(coef, x, y, input_image, order, trimfrac=0.1, show_plots=False):
     return score
 
 # TODO, is this function used anywhere in this repo? If not, comment it out. 
-def corrvalsum(coef, x, y, filtered, order, trimfrac=0.1,gsize=2):
+
+
+def corrvalsum(coef, x, y, filtered, order, trimfrac=0.1, gsize=2):
     _x, _y = transform(x, y, order, coef)
-    ydim,xdim = filtered.shape
+    ydim, xdim = filtered.shape
     s = 0.0
-    ry = np.reshape(_y,-1)
-    rx = np.reshape(_x,-1)
+    ry = np.reshape(_y, -1)
+    rx = np.reshape(_x, -1)
     for i in range(len(ry)):
         yi = ry[i]
         xi = rx[i]
-        xmin = int(xi)-gsize
-        xmax = xmin+2*gsize
-        ymin = int(yi)-gsize
-        ymax = ymin+2*gsize
-        if ymin>2*gsize and xmin>2*gsize and xmax<xdim-2*gsize and ymax<ydim-2*gsize:
+        xmin = int(xi) - gsize
+        xmax = xmin + 2 * gsize
+        ymin = int(yi) - gsize
+        ymax = ymin + 2 * gsize
+        if ymin > 2 * gsize and xmin > 2 * gsize and xmax < xdim - 2 * gsize and ymax < ydim - 2 * gsize:
             dx = xi - int(xi)
             dy = yi - int(yi)
 #             s+=np.sum(simplepsf(size=2*gsize,fwhm=fwhm,offx=dx,offy=dy)*filtered[ymin:ymax,xmin:xmax])
 #             s+=np.sum(gausspsf(size=2*gsize,fwhm=fwhm,offx=dx,offy=dy)*filtered[ymin:ymax,xmin:xmax])
-            s+=np.sum(filtered[ymin:ymax,xmin:xmax])
+            s += np.sum(filtered[ymin:ymax, xmin:xmax])
     return -s
-
 
 
 def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
@@ -762,7 +760,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
     function locatePSFlets takes an Image class, assumed to be a
     monochromatic grid of spots with read noise and shot noise, and
     returns the estimated positions of the spot centroids.  This is
-    designed to constrain the domain of the PSF-let fitting later in
+    designed to constrain the domain of the PSFlet fitting later in
     the pipeline.
 
     Parameters
@@ -774,7 +772,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
     sig: float
         standard deviation of convolving Gaussian used
         for estimating the grid of centroids.  Should be close
-        to the true value for the PSF-let spots.  Default 0.7.
+        to the true value for the PSFlet spots.  Default 0.7.
     coef: list
         initial guess of the coefficients of polynomial coordinate transformation
     trimfrac: float
@@ -826,12 +824,12 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
     filtered = ndimage.interpolation.spline_filter(unfiltered)
 
     #############################################################
-    # x, y: Grid of lenslet IDs, Lenslet (0, 0) is the center.
+    # x, y: Grid of lenslet IDs, Lenslet (0, 0) will be referred to as the center.
     #############################################################
 
-    #gridfrac = 10
+    # gridfrac = 10
     ydim, xdim = inImage.data.shape
-    #x = np.arange(-(ydim//gridfrac), ydim//gridfrac + 1)
+    # x = np.arange(-(ydim//gridfrac), ydim//gridfrac + 1)
     x = np.arange(-nlens // 2, nlens // 2)
     x, y = np.meshgrid(x, x)
 
@@ -859,18 +857,17 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
             for iy in np.arange(-9, 9, 0.5):
                 coef = initcoef(
                     order=polyorder,
-                    x0=ix + (xdim/2 - subshape),
-                    y0=iy + (ydim/2 - subshape),
+                    x0=ix + (xdim / 2 - subshape),
+                    y0=iy + (ydim / 2 - subshape),
                     scale=scale,
                     phi=phi
                 )
                 correlation_score_current = corrval(coef, x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s],
-                                 subfiltered, polyorder, trimfrac,show_plots=False)
+                                 subfiltered, polyorder, trimfrac, show_plots=False)
                 if correlation_score_current < correlation_score_best:
                     correlation_score_best = correlation_score_current
                     coef_current_best = copy.deepcopy(coef)
         coef_optimized = coef_current_best
-        
 
         log.info("Performing initial optimization of PSFlet location transformation coefficients for frame " + inImage.filename)
         res = optimize.minimize(corrval, coef_optimized, args=(x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s], 
@@ -879,7 +876,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
 
         coef_optimized[0] += subshape
         coef_optimized[(polyorder + 1) * (polyorder + 2) // 2] += subshape
-        log.info('Array origin: {:}'.format((coef_optimized[0],coef_optimized[(polyorder + 1) * (polyorder + 2) // 2])))
+        log.info('Array origin: {:}'.format((coef_optimized[0], coef_optimized[(polyorder + 1) * (polyorder + 2) // 2])))
 
     #############################################################
     # If we have coefficients from last iteration, assume that we
@@ -890,11 +887,11 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
     else:
         log.info("Initializing transformation coefficients with previous values")
         correlation_score_best = 0
-        coefsave = list(coef[:])
+        coef_baseline = list(coef[:])  # Save a copy of the starting input coefficients as our baseline
 
         for ix in np.arange(-finesearch, finesearch, 0.2):
             for iy in np.arange(-finesearch, finesearch, 0.2):
-                coef = coefsave[:]
+                coef = coef_baseline[:]  # Make a temporary copy of the coefficient array to work with
                 coef[0] += ix
                 coef[(polyorder + 1) * (polyorder + 2) // 2] += iy
 
@@ -904,22 +901,18 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
                     coef_current_best = copy.deepcopy(coef)
         coef_optimized = coef_current_best
 
+    # Now perform the minimiation routine on the full image. 
     log.info("Performing final optimization of PSFlet location transformation coefficients for frame " + inImage.filename)
-    res = optimize.minimize(corrval, coef_optimized,
-        args=(x, y, filtered, polyorder, trimfrac),
-        method='Powell')
+    res = optimize.minimize(corrval, coef_optimized, args=(x, y, filtered, polyorder, trimfrac), method='Powell')
 
     coef_optimized = res.x
-    log.info('Array origin: {:}'.format((coef_optimized[0],coef_optimized[(polyorder + 1) * (polyorder + 2) // 2])))
+    log.info(f'Lenslet array origin (pixels): {(coef_optimized[0], coef_optimized[(polyorder + 1) * (polyorder + 2) // 2])}')
 
     if not res.success:
-        log.info("Optimizing PSFlet location transformation coefficients may have failed for frame " + inImage.filename)
+        log.info("WARNING: Optimizing PSFlet location transformation coefficients may have failed for frame " + inImage.filename)
     _x, _y = transform(x, y, polyorder, coef_optimized)
 
-    #############################################################
-    # Boolean: do the lenslet PSFlets lie within the detector?
-    #############################################################
-
+    # Create an array to describe whether or not each PSFlet lies within the detector
     good_psflets = (_x > 5) * (_x < xdim - 5) * (_y > 5) * (_y < ydim - 5)
 
     return [_x, _y, good_psflets, coef_optimized]

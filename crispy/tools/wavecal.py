@@ -1,4 +1,22 @@
-from crispy.tools.locate_psflets import locatePSFlets, PSFLets,fine_transform
+from scipy.optimize import curve_fit
+from photutils.centroids import centroid_com
+from crispy.tools.imgtools import gen_bad_pix_mask
+from scipy.interpolate import griddata
+from astropy.stats import sigma_clipped_stats
+from photutils.detection import DAOStarFinder
+from scipy import ndimage, interpolate
+import warnings
+import glob
+from shutil import copy2
+from scipy.special import erf
+from crispy.tools.reduction import calculateWaveList
+import matplotlib.pyplot as plt
+from scipy import ndimage
+import multiprocessing
+import time
+import re
+import os
+from crispy.tools.locate_psflets import locatePSFlets, PSFLets, fine_transform
 from crispy.tools.image import Image
 from crispy.tools.par_utils import Task, Consumer
 import matplotlib as mpl
@@ -8,23 +26,6 @@ from astropy.io import fits as fits
 
 from crispy.tools.initLogger import getLogger
 log = getLogger('crispy')
-import os
-import re
-import time
-import multiprocessing
-from scipy import ndimage
-import matplotlib.pyplot as plt
-from crispy.tools.reduction import calculateWaveList
-from scipy.special import erf
-from shutil import copy2
-import glob
-import warnings
-from scipy import ndimage, interpolate
-from photutils.detection import DAOStarFinder
-from astropy.stats import sigma_clipped_stats
-from scipy.interpolate import griddata
-from crispy.tools.imgtools import gen_bad_pix_mask
-from photutils.centroids import centroid_com
 
 
 # from photutils import EPSFBuilder
@@ -33,7 +34,6 @@ from photutils.centroids import centroid_com
 # from astropy.table import Table
 # from photutils import find_peaks
 # from photutils.psf import extract_stars
-
 
 
 warnings.filterwarnings("ignore")
@@ -60,7 +60,7 @@ def do_inspection(par, image, xpos, ypos, lam, display_plot=False):
     vals = np.array([(xpos[m, n], ypos[m, n])
                      for m in range(xg) for n in range(yg)])
     pos = (vals[:, 0], vals[:, 1])
-    #aps = CircularAperture(pos, r=3)
+    # aps = CircularAperture(pos, r=3)
 
     # Temporarily turn off interactive plotting until this function is complete
     if not display_plot:
@@ -74,7 +74,7 @@ def do_inspection(par, image, xpos, ypos, lam, display_plot=False):
     for val in vals:
         circle = plt.Circle(val, 3, color='blue', lw=1, alpha=0.5)
         ax.add_artist(circle)
-    #aps.plot(ax=ax,color='blue', lw=1, alpha=0.5)
+    # aps.plot(ax=ax,color='blue', lw=1, alpha=0.5)
     fig.savefig(par.wavecalDir + 'inspection_%3d.png' % (lam), dpi=300)
 
     if display_plot:
@@ -145,7 +145,7 @@ def make_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
         if finexy is not None:
             xcen += finexy[0]
             ycen += finexy[1]
- 
+
         xcen += padding
         ycen += padding
         xcen = np.reshape(xcen, -1)
@@ -403,20 +403,20 @@ def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, renorm=True):
     # Allocate memory for the array that we will fill out one slice at a time
     hires_arr = np.zeros((nsubarr, nsubarr, upsample *
                           (npix + 1), upsample * (npix + 1)))
-    
-    size = upsample * (npix + 1) # Determine side length of the upsampled array
+
+    size = upsample * (npix + 1)  # Determine side length of the upsampled array
 
     # Generate a grid of (X,Y) grid coordinates
     _x = np.arange(size) - size // 2
     _y = np.arange(size) - size // 2
     _x, _y = np.meshgrid(_x, _y)
 
-    sig = par.FWHM / 2.355 * upsample # Calculate Gaussian sigma in units of pixels in the upsampled array
-    sigma = sig * lam / par.FWHMlam # Scale this sigma by the current wavelength
+    sig = par.FWHM / 2.355 * upsample  # Calculate Gaussian sigma in units of pixels in the upsampled array
+    sigma = sig * lam / par.FWHMlam  # Scale this sigma by the current wavelength
     psflet = (erf((_x + 0.5) / (np.sqrt(2) * sigma)) -
             erf((_x - 0.5) / (np.sqrt(2) * sigma))) * \
-            (erf((_y + 0.5) / (np.sqrt(2) * sigma)) -
-            erf((_y - 0.5) / (np.sqrt(2) * sigma)))
+        (erf((_y + 0.5) / (np.sqrt(2) * sigma)) -
+     erf((_y - 0.5) / (np.sqrt(2) * sigma)))
 
     # Normalize the PSFLet, if desired
     if renorm:
@@ -584,8 +584,8 @@ def gethires(x, y, good_psflets, image, upsample=5, nsubarr=5, npix=13, renorm=T
                             chisq /= np.amax(meanpsf)**2
 
                             subim[kk] *= (chisq < 1e-2 * upsample**2)
-                            #mask2 = np.abs(meanpsf - subim[kk])/(np.abs(meanpsf) + 0.01*np.amax(meanpsf)) < 1
-                            #subim[kk] *= mask2
+                            # mask2 = np.abs(meanpsf - subim[kk])/(np.abs(meanpsf) + 0.01*np.amax(meanpsf)) < 1
+                            # subim[kk] *= mask2
                             subim[kk] *= subim[kk] > -1e-3 * np.amax(meanpsf)
 
                 subim2 = subim.copy()
@@ -621,7 +621,7 @@ def gethires(x, y, good_psflets, image, upsample=5, nsubarr=5, npix=13, renorm=T
                                                      j] - mean) / std < 3.5
 
                         data = subim[:k, i, j][np.where(subim[:k, i, j] != 0)]
-                        #data = np.sort(data)
+                        # data = np.sort(data)
                         npts = data.shape[0]
                         if npts > 0:
                             meanpsf[i, j] = np.mean(data)
@@ -780,7 +780,7 @@ def makeHires(
                     par.wavecalDir +
                     'hires_psflets_lam%d.fits' %
                     (lam[index]),
-                    clobber=True)
+                    overwrite=True)
     else:
         log.info('No parallel computation')
         for i in range(len(lam)):
@@ -812,36 +812,26 @@ def makeHires(
                     for jj in range(di):
                         outim[ii * dj:(ii + 1) * dj, jj *
                               dj:(jj + 1) * dj] = hiresarr[ii, jj]
-                out = fits.HDUList(
-                    fits.PrimaryHDU(
-                        hiresarr.astype(
-                            np.float32)))
-                out.writeto(
-                    par.wavecalDir +
-                    'hires_psflets_lam%d.fits' %
-                    (lam[i]),
-                    clobber=True)
+                out = fits.HDUList(fits.PrimaryHDU(hiresarr.astype(np.float32)))
+                out.writeto(par.wavecalDir + 'hires_psflets_lam%d.fits' % (lam[i]), overwrite=True)
 
     return hires_arrs
 
 
-from scipy.optimize import curve_fit
-
-
-def gauss(x, a, x0, sig,b):
+def gauss(x, a, x0, sig, b):
     '''
     Simple gaussian function with usual inputs
     '''
-    return b+a*np.exp(-(x-x0)**2/(2.*sig**2))
-    
+    return b + a * np.exp(-(x - x0)**2 / (2. * sig**2))
 
-def fit_monochromatic_cube( cube,
-                            lamlist,
-                            returnAll = False,
-                            sigma_guess = 5):
+
+def fit_monochromatic_cube(cube,
+                           lamlist,
+                           returnAll=False,
+                           sigma_guess=5):
     '''
     Fits an extracted data cube with a gaussian to find the wavelength peak
-    
+
     Parameters
     ----------
     cube: 3D ndarray
@@ -855,16 +845,16 @@ def fit_monochromatic_cube( cube,
     sigma_guess: float
         Guess at the width of the gaussian fit in same units as lamlist (Default 5)
     '''
-    vals = np.nansum(np.nansum(cube,axis=2),axis=1)
-    popt, pcov = curve_fit( gauss,
-                            lamlist,
-                            vals,
-                            p0=[np.amax(vals),lamlist[np.argmax(vals)],sigma_guess,0]
-                            )
+    vals = np.nansum(np.nansum(cube, axis=2), axis=1)
+    popt, pcov = curve_fit(gauss,
+                           lamlist,
+                           vals,
+                           p0=[np.amax(vals), lamlist[np.argmax(vals)], sigma_guess, 0]
+                           )
     if returnAll: 
-        return popt,pcov
+        return popt, pcov
     else: 
-        return popt[1],np.sqrt(pcov)
+        return popt[1], np.sqrt(pcov)
 
 
 def monochromatic_update(par, inImage, inLam, order=3, apodize=False):
@@ -938,6 +928,7 @@ def monochromatic_update(par, inImage, inLam, order=3, apodize=False):
     np.savetxt(par.wavecalDir + "lamsol.dat", lamsol)
     log.info("Don't forget to run buildcalibrations again with makePolychrome=True!")
     return dx, dy, dphi
+
 
 def buildcalibrations(
         par,
@@ -1062,7 +1053,7 @@ def buildcalibrations(
     initcoef: numpy array
             Coefficient array corresponding to an initial guess of the polynomial map. Leave to None
             in order to start from scratch.
-        
+
 
     Notes
     -----
@@ -1119,7 +1110,7 @@ def buildcalibrations(
     dxlist = []  # List to store x-offsets from polynomial fit for fine calibration
     snrlist = []  # List to store SNR values for fine calibration
 
-    halfsize=5  # Half-size of search region around each PSFlet for fine calibration
+    halfsize = 5  # Half-size of search region around each PSFlet for fine calibration
 
     # Get dimensions of the first calibration image and initialize a mask variable
     ysize, xsize = Image(filename=filelist[0]).data.shape
@@ -1133,7 +1124,7 @@ def buildcalibrations(
         x, y = np.meshgrid(x, y)
         r = np.sqrt(x**2 + y**2)        # Calculate radial distance from center
         mask = (r < min(ysize, xsize) // 2)        # Create circular mask with radius equal to half the smaller dimension
-        
+
     if finecal:
         log.info('Implementing experimental fine calibration method - watch out for bugs!')
 
@@ -1143,75 +1134,74 @@ def buildcalibrations(
             im = Image(filename=filepath)
             mean, median, std = sigma_clipped_stats(im.data, sigma=3.0, maxiters=5)
             log.info('Mean, median, std: {:}'.format((mean, median, std)))
-            
+
             # Set the inverse variance to be the mask
             # hpmask = gen_bad_pix_mask(im.data)
             # mask *= hpmask
             # mask *= (im.data-median>3*std)
             imlist += [im]
             if genwavelengthsol:
-                ## wavelength calibration step from CHARIS
+                # wavelength calibration step from CHARIS
                 x, y, good_psflets, coef = locatePSFlets(im, polyorder=order, mask=mask, sig=1., 
                                     coef=coef, phi=par.philens, 
                                     scale=par.pitch / par.pixsize, nlens=par.nlens,
                                     trimfrac=trimfrac)
                 allcoef += [[lamlist[i]] + list(coef)]
-            
+
                 if finecal:
                     log.info('Finding individual centroids (experimental)')
-                    ## CRISPY-specific enhanced wavelength calibration step
+                    # CRISPY-specific enhanced wavelength calibration step
                     dy = np.zeros_like(y)
                     dx = np.zeros_like(x)
                     snr = np.zeros_like(x)
-                    mgrid = np.arange(2*halfsize)
-                    xgrid,ygrid = np.meshgrid(mgrid,mgrid)
+                    mgrid = np.arange(2 * halfsize)
+                    xgrid, ygrid = np.meshgrid(mgrid, mgrid)
 
                     for j in range(x.shape[0]):
                         for k in range(x.shape[1]):
-                            xl = x[j,k]
-                            yl = y[j,k]
-                            xmin = int(xl-halfsize)+1
-                            ymin = int(yl-halfsize)+1
-                            if ymin>0 and xmin>0 and xmin+2*halfsize<xsize and ymin+2*halfsize<ysize:
+                            xl = x[j, k]
+                            yl = y[j, k]
+                            xmin = int(xl - halfsize) + 1
+                            ymin = int(yl - halfsize) + 1
+                            if ymin > 0 and xmin > 0 and xmin + 2 * halfsize < xsize and ymin + 2 * halfsize < ysize:
                                 # define cutout
-                                cutout = im.data[ymin:ymin+2*halfsize,xmin:xmin+2*halfsize]-median
-                            
+                                cutout = im.data[ymin:ymin + 2 * halfsize, xmin:xmin + 2 * halfsize] - median
+
                                 # here is the new centroiding function: we could change this to something more robust
-                                dx[j,k],dy[j,k] = centroid_com(cutout)
-                            
+                                dx[j, k], dy[j, k] = centroid_com(cutout)
+
                                 # mask used for elementary aperture photometry
-                                apmask = (xgrid-dx[j,k])**2+(ygrid-dy[j,k])**2<apdiam**2
-                                apval = np.nansum(apmask*cutout)
+                                apmask = (xgrid - dx[j, k])**2 + (ygrid - dy[j, k])**2 < apdiam**2
+                                apval = np.nansum(apmask * cutout)
     #                             snr[j,k] = apval/(np.sqrt(np.nansum(apmask))*std)
 
                                 # estimate of SNR, only valid for very high fluxes, could do better
-                                snr[j,k] = np.sqrt(apval)
-                                dy[j,k] -= y[j,k]-ymin
-                                dx[j,k] -= x[j,k]-xmin
-                            
+                                snr[j, k] = np.sqrt(apval)
+                                dy[j, k] -= y[j, k] - ymin
+                                dx[j, k] -= x[j, k] - xmin
+
                     # Thresholding
-                    dy[snr<snrthreshold]=0.0
-                    dx[snr<snrthreshold]=0.0
-                
+                    dy[snr < snrthreshold] = 0.0
+                    dx[snr < snrthreshold] = 0.0
+
                     # ignore if new centroid is too out of whack
-                    dy[np.abs(dy)>pxthreshold]=0.0
-                    dx[np.abs(dx)>pxthreshold]=0.0
-                
+                    dy[np.abs(dy) > pxthreshold] = 0.0
+                    dx[np.abs(dx) > pxthreshold] = 0.0
+
                     dylist += [dy]
                     dxlist += [dx]
                     snrlist += [snr]
-                
+
                     if inspect:
-                        do_inspection(par, im.data, x+dx, y+dy, lamlist[i])
+                        do_inspection(par, im.data, x + dx, y + dy, lamlist[i])
                     elif inspect_first and i == 0:
-                        do_inspection(par, im.data, x+dx, y+dy, lamlist[i])
+                        do_inspection(par, im.data, x + dx, y + dy, lamlist[i])
 
                 else:
                     if inspect:
                         do_inspection(par, im.data, x, y, lamlist[i])
                     elif inspect_first and i == 0:
                         do_inspection(par, im.data, x, y, lamlist[i])
-
 
     if genwavelengthsol:
         log.info("Saving wavelength solution to " + outdir + "lamsol.dat")        
@@ -1226,41 +1216,40 @@ def buildcalibrations(
             ylistarr = np.array(dylist)
             snrlistarr = np.array(snrlist)
             out = fits.HDUList(fits.PrimaryHDU(xlistarr.astype(np.float32)))
-            out.writeto(outdir + 'dxlistarr.fits',overwrite=True)
+            out.writeto(outdir + 'dxlistarr.fits', overwrite=True)
             out = fits.HDUList(fits.PrimaryHDU(ylistarr.astype(np.float32)))
-            out.writeto(outdir + 'dylistarr.fits',overwrite=True)
+            out.writeto(outdir + 'dylistarr.fits', overwrite=True)
             out = fits.HDUList(fits.PrimaryHDU(snrlistarr.astype(np.float32)))
-            out.writeto(outdir + 'snrlistarr.fits',overwrite=True)
-            out = fits.HDUList(fits.PrimaryHDU(np.mean(ylistarr,axis=0).T.astype(np.float32)))
-            out.writeto(outdir + 'dylistarr_mean.fits',overwrite=True)
-            out = fits.HDUList(fits.PrimaryHDU(np.std(ylistarr,axis=0).T.astype(np.float32)))
-            out.writeto(outdir + 'dylistarr_std.fits',overwrite=True)
-            out = fits.HDUList(fits.PrimaryHDU(np.mean(xlistarr,axis=0).T.astype(np.float32)))
-            out.writeto(outdir + 'dxlistarr_mean.fits',overwrite=True)
-            out = fits.HDUList(fits.PrimaryHDU(np.std(xlistarr,axis=0).T.astype(np.float32)))
-            out.writeto(outdir + 'dxlistarr_std.fits',overwrite=True)
-            out = fits.HDUList(fits.PrimaryHDU(np.mean(snrlistarr,axis=0).T.astype(np.float32)))
-            out.writeto(outdir + 'snrlistarr_mean.fits',overwrite=True)
-            out = fits.HDUList(fits.PrimaryHDU(np.std(snrlistarr,axis=0).T.astype(np.float32)))
-            out.writeto(outdir + 'snrlistarr_std.fits',overwrite=True)
-            
+            out.writeto(outdir + 'snrlistarr.fits', overwrite=True)
+            out = fits.HDUList(fits.PrimaryHDU(np.mean(ylistarr, axis=0).T.astype(np.float32)))
+            out.writeto(outdir + 'dylistarr_mean.fits', overwrite=True)
+            out = fits.HDUList(fits.PrimaryHDU(np.std(ylistarr, axis=0).T.astype(np.float32)))
+            out.writeto(outdir + 'dylistarr_std.fits', overwrite=True)
+            out = fits.HDUList(fits.PrimaryHDU(np.mean(xlistarr, axis=0).T.astype(np.float32)))
+            out.writeto(outdir + 'dxlistarr_mean.fits', overwrite=True)
+            out = fits.HDUList(fits.PrimaryHDU(np.std(xlistarr, axis=0).T.astype(np.float32)))
+            out.writeto(outdir + 'dxlistarr_std.fits', overwrite=True)
+            out = fits.HDUList(fits.PrimaryHDU(np.mean(snrlistarr, axis=0).T.astype(np.float32)))
+            out.writeto(outdir + 'snrlistarr_mean.fits', overwrite=True)
+            out = fits.HDUList(fits.PrimaryHDU(np.std(snrlistarr, axis=0).T.astype(np.float32)))
+            out.writeto(outdir + 'snrlistarr_std.fits', overwrite=True)
+
     else:
         log.info("Loading wavelength solution from " + outdir + "lamsol.dat")
         lam = np.loadtxt(outdir + "lamsol.dat")[:, 0]
         allcoef = np.loadtxt(outdir + "lamsol.dat")[:, 1:]
-        
+
         if finecal:
             ylistarr = fits.getdata(outdir + 'dylistarr.fits')
             xlistarr = fits.getdata(outdir + 'dxlistarr.fits')
             snrlistarr = fits.getdata(outdir + 'snrlistarr.fits')
 
-
     if finecal:
-        finexy = [np.nanmean(xlistarr,axis=0),np.nanmean(ylistarr,axis=0),np.amin(snrlistarr,axis=0)]
+        finexy = [np.nanmean(xlistarr, axis=0), np.nanmean(ylistarr, axis=0), np.amin(snrlistarr, axis=0)]
     else:
         finexy = None
 
-    
+
 #     if genwavelengthsol:
     log.info("Computing wavelength values at pixel centers")
     psftool = PSFLets()
@@ -1269,8 +1258,8 @@ def buildcalibrations(
         lam,
         allcoef,
         order=order,
-        lam1=lam1/1.01,
-        lam2=lam2*1.01,
+        lam1=lam1 / 1.01,
+        lam2=lam2 * 1.01,
         borderpix=borderpix,
         finexy=finexy)
     psftool.savepixsol(outdir=outdir)
@@ -1280,7 +1269,7 @@ def buildcalibrations(
 
     xindx = np.arange(-par.nlens // 2, par.nlens // 2)
     xindx, yindx = np.meshgrid(xindx, xindx)
-    
+
     if makehiresPSFlets:
 
         hires_arrs = makeHires(
@@ -1298,7 +1287,7 @@ def buildcalibrations(
             npix,
             finexy=finexy,
             reflam=lam)
-    
+
     hires_list = np.sort(
         glob.glob(
             par.wavecalDir +
@@ -1350,8 +1339,8 @@ def buildcalibrations(
                     fullsigarr[i, j] = fit(psftool.lam_indx[i, j])
 
         out = fits.HDUList(fits.PrimaryHDU(fullsigarr.astype(np.float32)))
-        out.writeto(outdir + 'PSFwidths.fits', clobber=True)
-        
+        out.writeto(outdir + 'PSFwidths.fits', overwrite=True)
+
         calib_hdus = fits.open(outdir + 'PSFloc.fits')
         outkey = fits.HDUList(calib_hdus[0])
         outkey.append(calib_hdus[1])
@@ -1359,9 +1348,7 @@ def buildcalibrations(
         outkey.append(calib_hdus[3])
         outkey.append(calib_hdus[4])
         outkey.append(fits.PrimaryHDU(fullsigarr.astype(np.float32)))
-        outkey.writeto(outdir+'calib.fits', overwrite=True)
-
-
+        outkey.writeto(outdir + 'calib.fits', overwrite=True)
 
     if makePolychrome:
         if not makehiresPSFlets:
@@ -1398,7 +1385,7 @@ def buildcalibrations(
                     _x += finexy[0]
                     _y += finexy[1]
                 _good_psflets = (_x > borderpix) * (_x < xsize - borderpix) * \
-                        (_y > borderpix) * (_y < ysize - borderpix)
+                    (_y > borderpix) * (_y < ysize - borderpix)
                 xpos += [_x]
                 ypos += [_y]
                 good_psflets += [_good_psflets]
@@ -1439,7 +1426,7 @@ def buildcalibrations(
                     _x += finexy[0]
                     _y += finexy[1]
                 _good_psflets = (_x > borderpix) * (_x < xsize - borderpix) * \
-                        (_y > borderpix) * (_y < ysize - borderpix)
+                    (_y > borderpix) * (_y < ysize - borderpix)
                 xpos += [_x]
                 ypos += [_y]
                 good_psflets += [_good_psflets]
@@ -1447,7 +1434,7 @@ def buildcalibrations(
         log.info('Saving polychrome cube')
         polyimage[polyimage < threshold] = 0.0
         out = fits.HDUList(fits.PrimaryHDU(polyimage.astype(np.float32)))
-        out.writeto(outdir + 'polychromeR%d.fits.gz' % (par.R), clobber=True)
+        out.writeto(outdir + 'polychromeR%d.fits.gz' % (par.R), overwrite=True)
         out = fits.HDUList(
             fits.PrimaryHDU(
                 np.sum(
@@ -1458,7 +1445,7 @@ def buildcalibrations(
             outdir +
             'polychromeR%dstack.fits.gz' %
             (par.R),
-            clobber=True)
+            overwrite=True)
 
     else:
         lam_midpts, lam_endpts = calculateWaveList(par, lam, method='lstsq')
@@ -1473,7 +1460,7 @@ def buildcalibrations(
                 _x += finexy[0]
                 _y += finexy[1]
             _good_psflets = (_x > borderpix) * (_x < xsize - borderpix) * \
-                    (_y > borderpix) * (_y < ysize - borderpix)
+                (_y > borderpix) * (_y < ysize - borderpix)
             xpos += [_x]
             ypos += [_y]
             good_psflets += [_good_psflets]
@@ -1483,7 +1470,7 @@ def buildcalibrations(
     outkey.append(fits.PrimaryHDU(np.asarray(xpos)))
     outkey.append(fits.PrimaryHDU(np.asarray(ypos)))
     outkey.append(fits.PrimaryHDU(np.asarray(good_psflets).astype(np.uint8)))
-    outkey.writeto(outdir + 'polychromekeyR%d.fits' % (par.R), clobber=True)
+    outkey.writeto(outdir + 'polychromekeyR%d.fits' % (par.R), overwrite=True)
 
     if makehiresPolychrome:
         log.info('Making high-resolution polychrome cube (can use lots of memory)')
@@ -1550,7 +1537,7 @@ def buildcalibrations(
             outdir +
             'hirespolychromeR%d.fits.gz' %
             (par.R),
-            clobber=True)
+            overwrite=True)
         out = fits.HDUList(
             fits.PrimaryHDU(
                 np.sum(
@@ -1561,6 +1548,6 @@ def buildcalibrations(
             outdir +
             'hiresPolychromeR%dstack.fits' %
             (par.R),
-            clobber=True)
+            overwrite=True)
 
     log.info("Total time elapsed: %.0f s" % (time.time() - tstart))
