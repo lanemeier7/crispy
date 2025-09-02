@@ -153,7 +153,8 @@ class PSFLets:
         interp_y: float
             Y coordinate on the detector
         '''
-        interp_x, interp_y = transform(xindx, yindx, coeforder, coef)
+        # TODO, where does this 'coeforder' come from? Does this parent function actually get called from anywhere? Because clearly it's going to throw an error if it does.
+        interp_x, interp_y = transform(xindx, yindx, coeforder, coef) 
         return interp_x, interp_y
 
     def return_res(self, lam, allcoef, xindx, yindx,
@@ -197,13 +198,13 @@ class PSFLets:
             self.geninterparray(lam, allcoef, order=order)
 
         coeforder = int(np.sqrt(allcoef.shape[1])) - 1
-        n_spline = 100
+        nlam_for_spline = 100
 
-        interp_lam = np.linspace(lam1, lam2, n_spline)
+        interp_lam = np.linspace(lam1, lam2, nlam_for_spline)
         dy = []
         dx = []
 
-        for i in range(n_spline):
+        for i in range(nlam_for_spline):
             coef = np.zeros((coeforder + 1) * (coeforder + 2))
             for k in range(1, interporder + 1):
                 coef += k * self.interp_arr[k] * np.log(interp_lam[i])**(k - 1)
@@ -309,82 +310,101 @@ class PSFLets:
             borderpix=4,
             finexy=None):
         '''
-        Calculates the wavelength at the center of each pixel within a microspectrum
+        Calculates the wavelength at the center of each pixel within a microspectrum for all lenslets.
 
         Parameters
         ----------
-        lam: float
-            Wavelength in nm
-        allcoef: list of floats
+        par : object
+            Object containing parameters like nlens (number of lenslets) and npix (number of pixels).
+        lam : array
+            Wavelengths in nm for which we have calibration data.
+        allcoef : list of floats
             List describing the polynomial coefficients that best fit the lenslets,
-            for all wavelengths
-        order: int
-            Order of the polynomical fit
-        lam1: float
-            Lowest wavelength in nm
-        lam2: float
-            Highest wavelength in nm
+            for all wavelengths.
+        order : int, optional
+            Order of the polynomial fit. Default is 3.
+        lam1 : float, optional
+            Lowest wavelength in nm to consider. If None, uses min(lam).
+        lam2 : float, optional
+            Highest wavelength in nm to consider. If None, uses max(lam).
+        borderpix : int, optional
+            Number of pixels to exclude at the edges of the detector. Default is 4.
+        finexy : tuple, optional
+            Fine adjustments to x and y positions and SNR threshold.
+        Returns
+        -------
+        None
+            But populates the following attributes of the PSFlet class:
+            - xindx: array of integer pixel indices along dispersion axis
+            - yindx: array of floats indicating the cross-dispersion axis
+            - nlam: number of valid wavelengths for each lenslet
+            - lam_indx: wavelengths at integer pixel indices
+            - nlam_max: maximum number of wavelengths for any lenslet
+            - good: boolean array indicating valid lenslets
 
         Notes
         -----
-        This functions fills in most of the fields of the PSFLet class: the array
-        of xindx, yindx, nlam, lam_indx and nlam_max
+        This function is a crucial part of the wavelength calibration process,
+        converting from lenslet and wavelength space to detector pixel space.
         '''
 
-        ###################################################################
-        # Read in wavelengths of spots, coefficients of wavelength
-        # solution.  Obtain extrapolated limits of wavlength solution
-        # to 4% below and 3% above limits of the coefficient file by
-        # default.
-        ###################################################################
-
+        # Set wavelength limits if not provided
         if lam1 is None:
-            lam1 = np.amin(lam)  # * 0.98
+            lam1 = np.amin(lam)
         if lam2 is None:
-            lam2 = np.amax(lam)  # * 1.02
+            lam2 = np.amax(lam)
         interporder = order
 
+        # Generate interpolation array if not already done
         if self.interp_arr is None:
             self.geninterparray(lam, allcoef, order=order)
 
+        # Verify the number of coefficients matches the polynomial order
         coeforder = int(np.sqrt(allcoef.shape[1])) - 1
         if not (coeforder + 1) * (coeforder + 2) == allcoef.shape[1]:
             raise ValueError(
                 "Number of coefficients incorrect for polynomial order.")
 
+        # Create grid of lenslet indices
         xindx = np.arange(-par.nlens // 2, par.nlens // 2)
         xindx, yindx = np.meshgrid(xindx, xindx)
 
-        n_spline = 100
-
-        interp_x = np.zeros(tuple([n_spline] + list(xindx.shape)))
+        # Set up interpolation grid
+        nlam_for_spline = 100
+        interp_x = np.zeros(tuple([nlam_for_spline] + list(xindx.shape)))
         interp_y = np.zeros(interp_x.shape)
-        interp_lam = np.linspace(lam1, lam2, n_spline)
+        interp_lam = np.linspace(lam1, lam2, nlam_for_spline)
 
-        for i in range(n_spline):
+        # Calculate x and y positions for each lenslet at each interpolated wavelength
+        for i in range(nlam_for_spline):
             coef = np.zeros((coeforder + 1) * (coeforder + 2))
             for k in range(interporder + 1):
                 coef += self.interp_arr[k] * np.log(interp_lam[i])**k
             interp_x[i], interp_y[i] = transform(xindx, yindx, coeforder, coef)
+
+        # Apply fine adjustments if provided
         if finexy is not None:
             interp_x += finexy[0]
             interp_y += finexy[1]
 
+        # Initialize output arrays
         x = np.zeros(tuple(list(xindx.shape) + [1000]))
         y = np.zeros(x.shape)
         nlam = np.zeros(xindx.shape, np.int32)
         lam_out = np.zeros(y.shape)
         good = np.ones(xindx.shape)
 
-        # SNR threshold
+        # Apply SNR threshold if fine adjustments are provided
         if finexy is not None:
             good *= finexy[2] > 10
 
+        # Process each lenslet
         for ix in range(xindx.shape[0]):
             for iy in range(xindx.shape[1]):
                 pix_y = interp_x[:, ix, iy]
                 pix_x = interp_y[:, ix, iy]
 
+                # Check if lenslet falls within valid detector area
                 if np.any(
                         pix_x < borderpix) or np.any(
                         pix_x > par.npix -
@@ -395,38 +415,37 @@ class PSFLets:
                     good[ix, iy] = 0
                     continue
 
+                # Handle reversed wavelength order
                 if pix_y[-1] < pix_y[0]:
-                    #                     try:
-                    #                         print ix,iy,pix_y[-1], pix_y[0]
-                    #                         tck_y = interpolate.splrep(
-                    #                             pix_y[::-1], interp_lam[::-1], k=1, s=0)
-                    #                     except BaseException:
                     good[ix, iy] = 0
-#                         raise
                 else:
                     try:
+                        # Create spline representation of wavelength vs. y-position
                         tck_y = interpolate.splrep(pix_y, interp_lam, k=3, s=0)
                     except Exception:
                         good[ix, iy] = 0
                         log.error('Error on wavelength calibration for lenslet ({:})'.format((ix, iy)))
 
                 if good[ix, iy]:
+                    # Determine y-pixel range for this lenslet
                     y1, y2 = [int(np.amin(pix_y)) + 1, int(np.amax(pix_y))]
+                    # Create spline representation of x-position vs. wavelength
                     tck_x = interpolate.splrep(interp_lam, pix_x, k=1, s=0)
 
                     nlam[ix, iy] = y2 - y1 + 1
                     y[ix, iy, :nlam[ix, iy]] = np.arange(y1, y2 + 1)
-                    # evaluate wavelengths at integer pixel values
+                    # Evaluate wavelengths at integer pixel values
                     lam_out[ix, iy, :nlam[ix, iy]] = interpolate.splev(
                         y[ix, iy, :nlam[ix, iy]], tck_y) 
                     x[ix, iy, :nlam[ix, iy]] = interpolate.splev(
                         lam_out[ix, iy, :nlam[ix, iy]], tck_x)
 
+        # Determine maximum number of wavelengths for any lenslet
         for nlam_max in range(x.shape[-1]):
-            #             if np.all(y[:, :, nlam_max] == 0):
             if np.all(y[:, :, nlam_max] == 0):
                 break
 
+        # Populate class attributes with computed values
         self.xindx = y[:, :, :nlam_max]  # array of integer pixel indices along dispersion
         self.yindx = x[:, :, :nlam_max]  # array of floats indicating the cross. disp. axis
         self.nlam = nlam
@@ -534,6 +553,8 @@ def transform(x, y, order, coef):
     _x = np.zeros(np.asarray(x).shape)
     _y = np.zeros(np.asarray(y).shape)
 
+    # Calculating the new _x,_y coordinates is done in this way (as opposed to more traditional matrix multiplication)
+    # because of how the coefficient matrix is arranged as a 1D array. 
     i = 0
     for ix in range(order + 1):
         for iy in range(order - ix + 1):
@@ -645,7 +666,7 @@ def new_transform(x, y, order, coef):
     """
     Xlist = []
     Ylist = []
-    i = 0
+    # i = 0
     for ix in range(order + 1):
         for iy in range(order - ix + 1):
             Xlist.append(x**ix * y**iy)
@@ -714,7 +735,7 @@ def corrval(coef, x, y, input_image, order, trimfrac=0.1, show_plots=False):
     if show_plots:
         fig, ax = plt.subplots(figsize=(9, 7))
         im = ax.imshow(input_image, cmap='viridis')
-        scatter = ax.scatter(_x, _y, c='r', s=1)
+        ax.scatter(_x, _y, c='r', s=1)
         ax.set_title(f"Coefficients:\n{[f'{c:.1f}' for c in coef]}", fontsize=10)
         ax.set_xlim(0, input_image.shape[1])
         ax.set_ylim(0, input_image.shape[0])
@@ -729,10 +750,9 @@ def corrval(coef, x, y, input_image, order, trimfrac=0.1, show_plots=False):
 
     return score
 
-# TODO, is this function used anywhere in this repo? If not, comment it out. 
-
 
 def corrvalsum(coef, x, y, filtered, order, trimfrac=0.1, gsize=2):
+    # TODO, is this function used anywhere in this repo? If not, comment it out. 
     _x, _y = transform(x, y, order, coef)
     ydim, xdim = filtered.shape
     s = 0.0
@@ -746,10 +766,10 @@ def corrvalsum(coef, x, y, filtered, order, trimfrac=0.1, gsize=2):
         ymin = int(yi) - gsize
         ymax = ymin + 2 * gsize
         if ymin > 2 * gsize and xmin > 2 * gsize and xmax < xdim - 2 * gsize and ymax < ydim - 2 * gsize:
-            dx = xi - int(xi)
-            dy = yi - int(yi)
-#             s+=np.sum(simplepsf(size=2*gsize,fwhm=fwhm,offx=dx,offy=dy)*filtered[ymin:ymax,xmin:xmax])
-#             s+=np.sum(gausspsf(size=2*gsize,fwhm=fwhm,offx=dx,offy=dy)*filtered[ymin:ymax,xmin:xmax])
+            # dx = xi - int(xi)
+            # dy = yi - int(yi)
+            # s+=np.sum(simplepsf(size=2*gsize,fwhm=fwhm,offx=dx,offy=dy)*filtered[ymin:ymax,xmin:xmax])
+            # s+=np.sum(gausspsf(size=2*gsize,fwhm=fwhm,offx=dx,offy=dy)*filtered[ymin:ymax,xmin:xmax])
             s += np.sum(filtered[ymin:ymax, xmin:xmax])
     return -s
 
@@ -855,13 +875,8 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         # How did the bounds for this for-loop get determined? Something to do with the ~typical number of pixels between spots in a monochromatic image?
         for ix in np.arange(-7, 7, 0.5):
             for iy in np.arange(-9, 9, 0.5):
-                coef = initcoef(
-                    order=polyorder,
-                    x0=ix + (xdim / 2 - subshape),
-                    y0=iy + (ydim / 2 - subshape),
-                    scale=scale,
-                    phi=phi
-                )
+                coef = initcoef(order=polyorder, x0=ix + (xdim / 2 - subshape),
+                                y0=iy + (ydim / 2 - subshape), scale=scale, phi=phi)
                 correlation_score_current = corrval(coef, x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s],
                                  subfiltered, polyorder, trimfrac, show_plots=False)
                 if correlation_score_current < correlation_score_best:

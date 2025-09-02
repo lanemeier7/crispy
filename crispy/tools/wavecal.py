@@ -1173,7 +1173,7 @@ def buildcalibrations(
                                 # mask used for elementary aperture photometry
                                 apmask = (xgrid - dx[j, k])**2 + (ygrid - dy[j, k])**2 < apdiam**2
                                 apval = np.nansum(apmask * cutout)
-    #                             snr[j,k] = apval/(np.sqrt(np.nansum(apmask))*std)
+                                # snr[j,k] = apval/(np.sqrt(np.nansum(apmask))*std)
 
                                 # estimate of SNR, only valid for very high fluxes, could do better
                                 snr[j, k] = np.sqrt(apval)
@@ -1204,11 +1204,11 @@ def buildcalibrations(
                         do_inspection(par, im.data, x, y, lamlist[i])
 
     if genwavelengthsol:
-        log.info("Saving wavelength solution to " + outdir + "lamsol.dat")        
+        log.info(f"Saving wavelength solution to {outdir}lamsol.dat")        
         allcoef = np.asarray(allcoef)
-        np.savetxt(outdir + "lamsol.dat", allcoef)
-        lam = allcoef[:, 0]
-        allcoef = allcoef[:, 1:]
+        np.savetxt(f'{outdir}lamsol.dat', allcoef)
+        lam = allcoef[:, 0] # Unnecessary duplicate of 'lamlist' from earlier?
+        allcoef = allcoef[:, 1:] # Strip away the first element (the wavelength) from each row of the master coefficient table 
 
         if finecal:
             log.info('Exporting fine calibration products...')
