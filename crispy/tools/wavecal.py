@@ -696,8 +696,32 @@ def makeHires(
         finexy=None,
         reflam=None):
     '''
-    Construct high-resolution PSFLets
+    This function creates high-resolution models of the PSFLets
+    for each wavelength in the input list. The process involves:
 
+    1. For each wavelength:
+       a. Calculate the positions of PSFLets on the detector
+       b. If using real data (not Gaussian simulation):
+          - Extract small image regions around each PSFLet
+          - Combine these subimages to create a super-sampled PSFLet model
+       c. If using Gaussian simulation:
+          - Generate idealized Gaussian PSFLet models
+
+    2. The detector is divided into nsubarr x nsubarr regions, and a separate
+       high-resolution PSFLet model is created for each region to account for
+       spatial variations across the detector.
+
+    3. The resulting high-resolution PSFLet models have a spatial sampling 'upsample'
+       times higher than the original detector pixels.
+
+    4. If enabled, the function can use parallel processing to speed up the computation
+       for multiple wavelengths.
+
+    5. The high-resolution PSFLet models can optionally be saved as FITS files.
+
+    Returns:
+    hires_arrs : list of numpy.ndarray
+        List of high-resolution PSFLet models for each input wavelength
     '''
     hires_arrs = []
     allxpos = []
@@ -738,26 +762,9 @@ def makeHires(
 
         for i in range(len(lam)):
             if par.gaussian_hires:
-                tasks.put(
-                    Task(
-                        i,
-                        get_sim_hires,
-                        (par,
-                         lam[i],
-                            upsample,
-                            nsubarr)))
+                tasks.put(Task(i, get_sim_hires, (par, lam[i], upsample, nsubarr)))
             else:
-                tasks.put(
-                    Task(
-                        i,
-                        gethires,
-                        (allxpos[i],
-                         allypos[i],
-                            allgood_psflets[i],
-                            imlist[i],
-                            upsample,
-                            nsubarr,
-                            npix)))
+                tasks.put(Task(i, gethires, (allxpos[i], allypos[i], allgood_psflets[i], imlist[i], upsample, nsubarr, npix)))
 
         for i in range(ncpus):
             tasks.put(None)
@@ -801,8 +808,7 @@ def makeHires(
                 good_psflets = np.reshape(psftool.good_psflets, -1)
                 xpos = np.reshape(xpos, -1)
                 ypos = np.reshape(ypos, -1)
-                hiresarr = gethires(
-                    xpos, ypos, good_psflets, imlist[i], upsample, nsubarr)
+                hiresarr = gethires(xpos, ypos, good_psflets, imlist[i], upsample, nsubarr)
             hires_arrs += [hiresarr]
 
             if savehiresimages:
@@ -858,9 +864,6 @@ def fit_monochromatic_cube(cube,
 
 
 def monochromatic_update(par, inImage, inLam, order=3, apodize=False):
-    '''
-    TODO: also update polychrome when specified
-    '''
     log.info(
         "Making copies of wavelength solution from " +
         par.wavecalDir +
@@ -1207,8 +1210,8 @@ def buildcalibrations(
         log.info(f"Saving wavelength solution to {outdir}lamsol.dat")        
         allcoef = np.asarray(allcoef)
         np.savetxt(f'{outdir}lamsol.dat', allcoef)
-        lam = allcoef[:, 0] # Unnecessary duplicate of 'lamlist' from earlier?
-        allcoef = allcoef[:, 1:] # Strip away the first element (the wavelength) from each row of the master coefficient table 
+        lam = allcoef[:, 0]  # Unnecessary duplicate of 'lamlist' from earlier?
+        allcoef = allcoef[:, 1:]  # Strip away the first element (the wavelength) from each row of the master coefficient table 
 
         if finecal:
             log.info('Exporting fine calibration products...')
@@ -1288,10 +1291,7 @@ def buildcalibrations(
             finexy=finexy,
             reflam=lam)
 
-    hires_list = np.sort(
-        glob.glob(
-            par.wavecalDir +
-            'hires_psflets_lam???.fits'))
+    hires_list = np.sort(glob.glob(par.wavecalDir + 'hires_psflets_lam???.fits'))
     if makePSFWidths:
         log.info("Computing PSFLet widths...")
         if not makehiresPSFlets:

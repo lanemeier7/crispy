@@ -79,7 +79,7 @@ class PSFLets:
         Parameters
         ----------
         outdir: String
-            Directory in which to put the file. The file is name PSFloc.fits and is a
+            Directory in which to put the file. The file is named PSFloc.fits and is a
             multi-extension FITS file, each extension corresponding to:
             0. the list of wavelengths at which the calibration is done
             1. a 2D ndarray with the X position of all lenslets
@@ -88,10 +88,7 @@ class PSFLets:
 
         '''
         if not os.path.isdir(outdir):
-            raise IOError(
-                "Attempting to save pixel solution to directory " +
-                outdir +
-                ".  Directory does not exist.")
+            raise IOError(f"Attempting to save pixel solution to directory {outdir}.  Directory does not exist.")
         outfile = re.sub('//', '/', outdir + '/PSFloc.fits')
         out = fits.HDUList(fits.PrimaryHDU(self.lam_indx))
         out.append(fits.PrimaryHDU(self.xindx))
@@ -112,8 +109,8 @@ class PSFLets:
 
         Parameters
         ----------
-        lam: float
-            Wavelength in nm
+        lam: array
+            Wavelengths in nm
         allcoef: list of lists floats
             Polynomial coefficients of wavelength solution
         order: int
@@ -126,11 +123,11 @@ class PSFLets:
 
         self.interp_arr = np.zeros((order + 1, allcoef.shape[1]))
         self.order = order
-        xarr = np.ones((lam.shape[0], order + 1))
+        log_wavelength_powers = np.ones((lam.shape[0], order + 1)) # Initialize an array of wavelength terms for fitting
         for i in range(1, order + 1):
-            xarr[:, i] = np.log(lam)**i
+            log_wavelength_powers[:, i] = np.log(lam)**i # Why use the log of wavelength for fitting?
         for i in range(self.interp_arr.shape[1]):
-            coef = np.linalg.lstsq(xarr, allcoef[:, i])[0]
+            coef = np.linalg.lstsq(log_wavelength_powers, allcoef[:, i])[0]
             self.interp_arr[:, i] = coef
 
     def return_locations_short(self, coef, xindx, yindx):
@@ -319,7 +316,7 @@ class PSFLets:
         lam : array
             Wavelengths in nm for which we have calibration data.
         allcoef : list of floats
-            List describing the polynomial coefficients that best fit the lenslets,
+            List describing the polynomial coefficients that best fit the lenslets to pixel position,
             for all wavelengths.
         order : int, optional
             Order of the polynomial fit. Default is 3.
@@ -355,8 +352,9 @@ class PSFLets:
             lam2 = np.amax(lam)
         interporder = order
 
-        # Generate interpolation array if not already done
+        # Generate interpolation array of size [order+1, number of coefficients] if not already done
         if self.interp_arr is None:
+            # Create interpolation array to smooth/interpolate wavelength solution
             self.geninterparray(lam, allcoef, order=order)
 
         # Verify the number of coefficients matches the polynomial order
@@ -375,7 +373,7 @@ class PSFLets:
         interp_y = np.zeros(interp_x.shape)
         interp_lam = np.linspace(lam1, lam2, nlam_for_spline)
 
-        # Calculate x and y positions for each lenslet at each interpolated wavelength
+        # Calculate x and y positions in pixel-space for each lenslet at each interpolated wavelength
         for i in range(nlam_for_spline):
             coef = np.zeros((coeforder + 1) * (coeforder + 2))
             for k in range(interporder + 1):
@@ -388,11 +386,11 @@ class PSFLets:
             interp_y += finexy[1]
 
         # Initialize output arrays
-        x = np.zeros(tuple(list(xindx.shape) + [1000]))
+        x = np.zeros(tuple(list(xindx.shape) + [1000]))  # NOTE, Why is x initialized to this size? Where does the 1000 come from? Something to do with determining the maximum number of wavelengths per lenslet later?
         y = np.zeros(x.shape)
         nlam = np.zeros(xindx.shape, np.int32)
         lam_out = np.zeros(y.shape)
-        good = np.ones(xindx.shape)
+        good = np.ones(xindx.shape) # An array for tracking whether or not any interpolated wavelengths from this lenslet fall outside the detector
 
         # Apply SNR threshold if fine adjustments are provided
         if finexy is not None:
@@ -401,17 +399,14 @@ class PSFLets:
         # Process each lenslet
         for ix in range(xindx.shape[0]):
             for iy in range(xindx.shape[1]):
+                # NOTE from Evan Bray (2025-09-02): I think the following line was a bug and that pix_y and pix_x are reversed, 
+                # but it ends up working out in the end because when we assign values to self.xindx we use the y-spline.
                 pix_y = interp_x[:, ix, iy]
                 pix_x = interp_y[:, ix, iy]
 
                 # Check if lenslet falls within valid detector area
-                if np.any(
-                        pix_x < borderpix) or np.any(
-                        pix_x > par.npix -
-                        borderpix) or np.any(
-                        pix_y < borderpix) or np.any(
-                        pix_y > par.npix -
-                        borderpix):
+                if (np.any(pix_x < borderpix) or np.any(pix_x > par.npix - borderpix) or
+                    np.any(pix_y < borderpix) or np.any(pix_y > par.npix - borderpix)):
                     good[ix, iy] = 0
                     continue
 
@@ -420,7 +415,7 @@ class PSFLets:
                     good[ix, iy] = 0
                 else:
                     try:
-                        # Create spline representation of wavelength vs. y-position
+                        # Create spline representation of wavelength vs. y-pixel position
                         tck_y = interpolate.splrep(pix_y, interp_lam, k=3, s=0)
                     except Exception:
                         good[ix, iy] = 0
@@ -435,12 +430,11 @@ class PSFLets:
                     nlam[ix, iy] = y2 - y1 + 1
                     y[ix, iy, :nlam[ix, iy]] = np.arange(y1, y2 + 1)
                     # Evaluate wavelengths at integer pixel values
-                    lam_out[ix, iy, :nlam[ix, iy]] = interpolate.splev(
-                        y[ix, iy, :nlam[ix, iy]], tck_y) 
-                    x[ix, iy, :nlam[ix, iy]] = interpolate.splev(
-                        lam_out[ix, iy, :nlam[ix, iy]], tck_x)
+                    lam_out[ix, iy, :nlam[ix, iy]] = interpolate.splev(y[ix, iy, :nlam[ix, iy]], tck_y) 
+                    x[ix, iy, :nlam[ix, iy]] = interpolate.splev(lam_out[ix, iy, :nlam[ix, iy]], tck_x)
 
         # Determine maximum number of wavelengths for any lenslet
+        # nlam_max = np.count_nonzero(y,axis=2).max() # Proposed, more elegant improvement to the method below
         for nlam_max in range(x.shape[-1]):
             if np.all(y[:, :, nlam_max] == 0):
                 break
