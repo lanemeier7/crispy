@@ -1263,7 +1263,8 @@ def buildcalibrations(
         lam1=lam1 / 1.01,
         lam2=lam2 * 1.01,
         borderpix=borderpix,
-        finexy=finexy)
+        finexy=finexy,
+        plot_wavelength_map=True)
     psftool.savepixsol(outdir=outdir)
 #     else:
 #         log.info("Loading previous wavelength calibration (PSFloc.fits)")
@@ -1281,16 +1282,17 @@ def buildcalibrations(
             lam,
             allcoef,
             psftool,
-            imlist,
-            savehiresimages,
-            upsample,
-            nsubarr,
-            npix,
-            parallel,
+            imlist=imlist,
+            savehiresimages=savehiresimages,
+            upsample=upsample,
+            nsubarr=nsubarr,
+            npix=npix,
+            parallel=parallel,
             finexy=finexy,
             reflam=lam)
 
     hires_list = np.sort(glob.glob(par.wavecalDir + 'hires_psflets_lam???.fits'))
+    # Now generate some arrays that describe the PSFLet width as a function of various things
     if makePSFWidths:
         log.info("Computing PSFLet widths...")
         if not makehiresPSFlets:
@@ -1301,42 +1303,49 @@ def buildcalibrations(
             lam_hires = lam.copy()
 
         hires_shape = hires_arrs[0].shape
-        sigarr = np.zeros((len(hires_list), hires_shape[0], hires_shape[1]))
+        # Initialize an array to hold the PSF widths for each subarray and wavelength
+        sigma_vs_subarray = np.zeros((len(hires_list), hires_shape[0], hires_shape[1]))  
+
+        # Create an x-axis array centered at zero for the high-resolution PSFLets
         _x = np.arange(hires_shape[2]) / float(upsample)
         _x -= _x[_x.shape[0] // 2]
 
-        # Measure the std along the average of ~3 columns
-        for i in range(sigarr.shape[0]):
-            for j in range(sigarr.shape[1]):
-                for k in range(sigarr.shape[2]):
-                    row = np.sum(
-                        hires_arrs[i][j, k, :, hires_shape[3] // 2 - 1:hires_shape[3] // 2 + 2], axis=1)
-                    sigarr[i, j, k] = np.sum(row * _x**2)
-                    sigarr[i, j, k] /= np.sum(row)
+        # Measure the gaussian sigma across a slice that is the average of ~3 columns
+        # NOTE that this method of calculating sigma breaks down if:
+        # _x is not centered at 0, PSF is not centered at _x=0, PSF is not well-approximated by a Gaussian
+        # or the PSF sigma is comparable to the window size, the PSF is on a nonzero background.
+        # This method might be computationally faster than fitting a Gaussian, but it is not as robust. Perhaps it is sufficient.
+        for i in range(sigma_vs_subarray.shape[0]):
+            for j in range(sigma_vs_subarray.shape[1]):
+                for k in range(sigma_vs_subarray.shape[2]):
+                    row = np.sum(hires_arrs[i][j, k, :, hires_shape[3] // 2 - 1:hires_shape[3] // 2 + 2], axis=1)
+                    sigma_vs_subarray[i, j, k] = np.sum(row * _x**2)
+                    sigma_vs_subarray[i, j, k] /= np.sum(row)
 
-            sigarr[i] = np.sqrt(sigarr[i])
+            sigma_vs_subarray[i] = np.sqrt(sigma_vs_subarray[i])
 
         mean_x = psftool.xindx[:, :, psftool.xindx.shape[-1] // 2]
         mean_y = psftool.yindx[:, :, psftool.yindx.shape[-1] // 2]
 
-        longsigarr = np.zeros(
-            (len(lam_hires), mean_x.shape[0], mean_x.shape[1]))
+        # Initialize an array to store PSF widths for each lenslet, at each calibration wavelength
+        sigma_vs_calwavelength = np.zeros((len(lam_hires), mean_x.shape[0], mean_x.shape[1]))
 
-        ix = mean_x * hires_arrs[0].shape[1] / par.npix - 0.5
-        iy = mean_y * hires_arrs[0].shape[0] / par.npix - 0.5
+        ix = mean_x * hires_arrs[0].shape[1] / par.npix - 0.5  # x-coordinates of lenslets in the high-resolution PSFlet array
+        iy = mean_y * hires_arrs[0].shape[0] / par.npix - 0.5  # y-coordinates of lenslets in the high-resolution PSFlet array
 
-        for i in range(sigarr.shape[0]):
-            longsigarr[i] = ndimage.map_coordinates(
-                sigarr[i], [iy, ix], order=3, mode='nearest')
-        fullsigarr = np.ones((psftool.xindx.shape))
+        for i in range(sigma_vs_subarray.shape[0]):
+            sigma_vs_calwavelength[i] = ndimage.map_coordinates(sigma_vs_subarray[i], [iy, ix], order=3, mode='nearest')
+
+        # Initialize an array for storing PSF widths for each lenslet at each "pixel wavelength" (i.e. the wavelength at each pixel in the detector)
+        sigma_vs_pixelwavelength = np.ones((psftool.xindx.shape))  
         for i in range(mean_x.shape[0]):
             for j in range(mean_x.shape[1]):
                 if psftool.good[i, j]:
-                    fit = interpolate.interp1d(np.asarray(lam_hires), longsigarr[:, i, j],
+                    fit = interpolate.interp1d(np.asarray(lam_hires), sigma_vs_calwavelength[:, i, j],
                                                bounds_error=False, fill_value='extrapolate')
-                    fullsigarr[i, j] = fit(psftool.lam_indx[i, j])
+                    sigma_vs_pixelwavelength[i, j] = fit(psftool.lam_indx[i, j])
 
-        out = fits.HDUList(fits.PrimaryHDU(fullsigarr.astype(np.float32)))
+        out = fits.HDUList(fits.PrimaryHDU(sigma_vs_pixelwavelength.astype(np.float32)))
         out.writeto(outdir + 'PSFwidths.fits', overwrite=True)
 
         calib_hdus = fits.open(outdir + 'PSFloc.fits')
@@ -1345,7 +1354,7 @@ def buildcalibrations(
         outkey.append(calib_hdus[2])
         outkey.append(calib_hdus[3])
         outkey.append(calib_hdus[4])
-        outkey.append(fits.PrimaryHDU(fullsigarr.astype(np.float32)))
+        outkey.append(fits.PrimaryHDU(sigma_vs_pixelwavelength.astype(np.float32)))
         outkey.writeto(outdir + 'calib.fits', overwrite=True)
 
     if makePolychrome:

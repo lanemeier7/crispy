@@ -305,7 +305,8 @@ class PSFLets:
             lam1=None,
             lam2=None,
             borderpix=4,
-            finexy=None):
+            finexy=None,
+            plot_wavelength_map=False):
         '''
         Calculates the wavelength at the center of each pixel within a microspectrum for all lenslets.
 
@@ -328,14 +329,17 @@ class PSFLets:
             Number of pixels to exclude at the edges of the detector. Default is 4.
         finexy : tuple, optional
             Fine adjustments to x and y positions and SNR threshold.
+        plot_wavelength_map : boolean
+            Display a plot that helps relate the detector image to particular lenslets and wavelenghts. Helpful for troubleshooting. 
+            
         Returns
         -------
         None
             But populates the following attributes of the PSFlet class:
-            - xindx: array of integer pixel indices along dispersion axis
-            - yindx: array of floats indicating the cross-dispersion axis
+            - xindx: array of integer pixel indices along dispersion axis for each lenslet
+            - yindx: array of floats indicating the cross-dispersion axis for each lenslet
             - nlam: number of valid wavelengths for each lenslet
-            - lam_indx: wavelengths at integer pixel indices
+            - lam_indx: wavelength index that corresponds to integer pixel indices
             - nlam_max: maximum number of wavelengths for any lenslet
             - good: boolean array indicating valid lenslets
 
@@ -360,8 +364,7 @@ class PSFLets:
         # Verify the number of coefficients matches the polynomial order
         coeforder = int(np.sqrt(allcoef.shape[1])) - 1
         if not (coeforder + 1) * (coeforder + 2) == allcoef.shape[1]:
-            raise ValueError(
-                "Number of coefficients incorrect for polynomial order.")
+            raise ValueError("Number of coefficients incorrect for polynomial order.")
 
         # Create grid of lenslet indices
         xindx = np.arange(-par.nlens // 2, par.nlens // 2)
@@ -446,6 +449,41 @@ class PSFLets:
         self.lam_indx = lam_out[:, :, :nlam_max]  # wavelengths at int. pixel indices
         self.nlam_max = np.amax(nlam)
         self.good = good
+        
+        # Make a plot of pixel wavelengths vs pixel position
+        if plot_wavelength_map:
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.set_aspect('equal')
+
+            # Flatten the arrays and create a mask for non-zero wavelengths
+            xind_temp = np.arange(self.xindx.shape[1])
+            yind_temp = np.arange(self.xindx.shape[0])
+            xind_temp, yind_temp = np.meshgrid(xind_temp, yind_temp)
+            x = self.xindx.flatten()
+            y = self.yindx.flatten()
+            wavelengths = self.lam_indx.flatten()
+            mask = wavelengths != 0
+
+            # Create scatter plot with masked data
+            scatter = ax.scatter(x[mask], y[mask], c=wavelengths[mask], s=5, cmap='viridis')
+
+            # Add annotations with the index of each lenslet overlaid with each microspectrum
+            # Warning, uncommenting the following line will make the plot slower to render
+            # for i in range(par.nlens):
+            #     for j in range(par.nlens):
+            #         # print(i,j)
+            #         xpos, ypos = [self.xindx[i, j, 0], self.yindx[i, j, 0]]
+            #         if xpos == 0 or ypos == 0:
+            #             continue
+            #         ax.annotate(f'({i},{j})', xy=(xpos-2, ypos+1), color='black', fontsize=12)
+            ax.set_xlim(100, 200)
+            ax.set_ylim(100, 200)
+            ax.set_xlabel('pixels')
+            ax.set_ylabel('pixels')
+            ax.set_title('Lenslet + Wavelength Map')
+            cbar = fig.colorbar(scatter, ax=ax, label='Wavelength (nm)')
+            fig.tight_layout()
+            plt.show()
 
 
 def initcoef(order, scale, phi, x0=0, y0=0):
