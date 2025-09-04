@@ -399,31 +399,29 @@ def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, renorm=True):
     # TODO improve this docstring with Numpy style
     # TODO rename all instances of 'renorm' to 'normalize'
     """
+    # Determine side length of the upsampled array
+    array_size = upsample * (npix + 1)  
 
     # Allocate memory for the array that we will fill out one slice at a time
-    hires_arr = np.zeros((nsubarr, nsubarr, upsample *
-                          (npix + 1), upsample * (npix + 1)))
-
-    size = upsample * (npix + 1)  # Determine side length of the upsampled array
+    hires_arr = np.zeros((nsubarr, nsubarr, array_size, array_size))
 
     # Generate a grid of (X,Y) grid coordinates
-    _x = np.arange(size) - size // 2
-    _y = np.arange(size) - size // 2
+    _x = np.arange(array_size) - array_size // 2
+    _y = np.arange(array_size) - array_size // 2
     _x, _y = np.meshgrid(_x, _y)
 
-    sig = par.FWHM / 2.355 * upsample  # Calculate Gaussian sigma in units of pixels in the upsampled array
-    sigma = sig * lam / par.FWHMlam  # Scale this sigma by the current wavelength
-    psflet = (erf((_x + 0.5) / (np.sqrt(2) * sigma)) -
-            erf((_x - 0.5) / (np.sqrt(2) * sigma))) * \
-        (erf((_y + 0.5) / (np.sqrt(2) * sigma)) -
-     erf((_y - 0.5) / (np.sqrt(2) * sigma)))
+    sigma_baseline = par.FWHM / 2.355 * upsample  # Calculate Gaussian sigma in units of pixels in the upsampled array
+    sigma_scaled = sigma_baseline * lam / par.FWHMlam  # Scale this sigma by the current wavelength
+    psflet = (erf((_x + 0.5) / (np.sqrt(2) * sigma_scaled)) -
+            erf((_x - 0.5) / (np.sqrt(2) * sigma_scaled))) * \
+        (erf((_y + 0.5) / (np.sqrt(2) * sigma_scaled)) -
+     erf((_y - 0.5) / (np.sqrt(2) * sigma_scaled)))
 
     # Normalize the PSFLet, if desired
     if renorm:
         psflet *= upsample**2 / np.sum(psflet)
 
-    # Question for Maxime/Tim: What is the purpose of this section?
-    # When would you need a 4d array with nsubarr*nsubarr copies of a 2D 'psflet'?
+    # Because the output is expected to ahve nsubarr * nsubarr entries, fill the array with the same PSFLet
     for i in range(nsubarr):
         for j in range(nsubarr):
             hires_arr[i, j] = psflet
@@ -470,7 +468,7 @@ def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, renorm=True):
 #     return epsf.data
 #             
 
-def gethires(x, y, good_psflets, image, upsample=5, nsubarr=5, npix=13, renorm=True):
+def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, renorm=True):
     """
     Build high resolution images of the undersampled PSF using the
     monochromatic frames.
@@ -531,7 +529,7 @@ def gethires(x, y, good_psflets, image, upsample=5, nsubarr=5, npix=13, renorm=T
             ############################################################
 
             for i in range(x.shape[0]):
-                if x[i] > j1 and x[i] < j2 and y[i] > i1 and y[i] < i2 and good_psflets[i]:
+                if x[i] > j1 and x[i] < j2 and y[i] > i1 and y[i] < i2 and good[i]:
                     xval = x[i] - 0.5 / upsample
                     yval = y[i] - 0.5 / upsample
 
@@ -648,7 +646,7 @@ def gethires(x, y, good_psflets, image, upsample=5, nsubarr=5, npix=13, renorm=T
 
     return hires_arr
 
-# def gethires(x, y, good_psflets, image, upsample=5, nsubarr=5, npix=13, renorm=True):
+# def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, renorm=True):
 #     """
 #     Build high resolution images of the undersampled PSF using the
 #     monochromatic frames.
@@ -726,7 +724,7 @@ def makeHires(
     hires_arrs = []
     allxpos = []
     allypos = []
-    allgood_psflets = []
+    allgood = []
 
     log.info('Making high-resolution PSFLet models')
 
@@ -746,12 +744,12 @@ def makeHires(
                 if finexy is not None:
                     xpos += finexy[0]
                     ypos += finexy[1]
-                good_psflets = np.reshape(psftool.good_psflets, -1)
+                good = np.reshape(psftool.good, -1)
                 xpos = np.reshape(xpos, -1)
                 ypos = np.reshape(ypos, -1)
                 allxpos += [xpos]
                 allypos += [ypos]
-                allgood_psflets += [good_psflets]
+                allgood += [good]
         tasks = multiprocessing.Queue()
         results = multiprocessing.Queue()
         ncpus = multiprocessing.cpu_count()
@@ -764,7 +762,7 @@ def makeHires(
             if par.gaussian_hires:
                 tasks.put(Task(i, get_sim_hires, (par, lam[i], upsample, nsubarr)))
             else:
-                tasks.put(Task(i, gethires, (allxpos[i], allypos[i], allgood_psflets[i], imlist[i], upsample, nsubarr, npix)))
+                tasks.put(Task(i, gethires, (allxpos[i], allypos[i], allgood[i], imlist[i], upsample, nsubarr, npix)))
 
         for i in range(ncpus):
             tasks.put(None)
@@ -805,19 +803,20 @@ def makeHires(
                 if finexy is not None:
                     xpos += finexy[0]
                     ypos += finexy[1]
-                good_psflets = np.reshape(psftool.good_psflets, -1)
+                good = np.reshape(psftool.good, -1)
                 xpos = np.reshape(xpos, -1)
                 ypos = np.reshape(ypos, -1)
-                hiresarr = gethires(xpos, ypos, good_psflets, imlist[i], upsample, nsubarr)
+                hiresarr = gethires(xpos, ypos, good, imlist[i], upsample, nsubarr)
             hires_arrs += [hiresarr]
 
+            # TODO, in one iteration, savehiresimages equaled 3 here. How could this happen?
             if savehiresimages:
-                di, dj = hiresarr.shape[0], hiresarr.shape[2]
-                outim = np.zeros((di * dj, di * dj))
-                for ii in range(di):
-                    for jj in range(di):
-                        outim[ii * dj:(ii + 1) * dj, jj *
-                              dj:(jj + 1) * dj] = hiresarr[ii, jj]
+                # Apparently deprecated code that didn't get used? Commenting it out for now. 
+                # di, dj = hiresarr.shape[0], hiresarr.shape[2]
+                # outim = np.zeros((di * dj, di * dj))
+                # for ii in range(di):
+                #     for jj in range(di):
+                #         outim[ii * dj:(ii + 1) * dj, jj * dj:(jj + 1) * dj] = hiresarr[ii, jj]
                 out = fits.HDUList(fits.PrimaryHDU(hiresarr.astype(np.float32)))
                 out.writeto(par.wavecalDir + 'hires_psflets_lam%d.fits' % (lam[i]), overwrite=True)
 
@@ -888,7 +887,7 @@ def monochromatic_update(par, inImage, inLam, order=3, apodize=False):
         r = np.sqrt(x**2 + y**2)
         mask = (r < min(ysize, xsize) // 2)
 
-    x, y, good_psflets, newcoef = locatePSFlets(inImage, polyorder=order, mask=mask, sig=1., coef=oldcoef, phi=par.philens, scale=par.pitch / par.pixsize, nlens=par.nlens)
+    x, y, good, newcoef = locatePSFlets(inImage, polyorder=order, mask=mask, sig=1., coef=oldcoef, phi=par.philens, scale=par.pitch / par.pixsize, nlens=par.nlens)
     psftool.geninterparray(lam, allcoef, order=order)
     dcoef = newcoef - oldcoef
 
@@ -1145,7 +1144,7 @@ def buildcalibrations(
             imlist += [im]
             if genwavelengthsol:
                 # wavelength calibration step from CHARIS
-                x, y, good_psflets, coef = locatePSFlets(im, polyorder=order, mask=mask, sig=1., 
+                x, y, good, coef = locatePSFlets(im, polyorder=order, mask=mask, sig=1., 
                                     coef=coef, phi=par.philens, 
                                     scale=par.pitch / par.pixsize, nlens=par.nlens,
                                     trimfrac=trimfrac)
@@ -1283,11 +1282,11 @@ def buildcalibrations(
             allcoef,
             psftool,
             imlist,
-            parallel,
             savehiresimages,
             upsample,
             nsubarr,
             npix,
+            parallel,
             finexy=finexy,
             reflam=lam)
 
@@ -1295,16 +1294,15 @@ def buildcalibrations(
     if makePSFWidths:
         log.info("Computing PSFLet widths...")
         if not makehiresPSFlets:
-            hires_arrs = [
-                fits.open(filename)[0].data for filename in hires_list]
+            hires_arrs = [fits.open(filename)[0].data for filename in hires_list]
             lam_hires = [int(re.sub('.*lam', '', re.sub('.fits', '', filename)))
                          for filename in hires_list]
         else:
             lam_hires = lam.copy()
 
-        shape = hires_arrs[0].shape
-        sigarr = np.zeros((len(hires_list), shape[0], shape[1]))
-        _x = np.arange(shape[2]) / float(upsample)
+        hires_shape = hires_arrs[0].shape
+        sigarr = np.zeros((len(hires_list), hires_shape[0], hires_shape[1]))
+        _x = np.arange(hires_shape[2]) / float(upsample)
         _x -= _x[_x.shape[0] // 2]
 
         # Measure the std along the average of ~3 columns
@@ -1312,7 +1310,7 @@ def buildcalibrations(
             for j in range(sigarr.shape[1]):
                 for k in range(sigarr.shape[2]):
                     row = np.sum(
-                        hires_arrs[i][j, k, :, shape[3] // 2 - 1:shape[3] // 2 + 2], axis=1)
+                        hires_arrs[i][j, k, :, hires_shape[3] // 2 - 1:hires_shape[3] // 2 + 2], axis=1)
                     sigarr[i, j, k] = np.sum(row * _x**2)
                     sigarr[i, j, k] /= np.sum(row)
 
@@ -1333,7 +1331,7 @@ def buildcalibrations(
         fullsigarr = np.ones((psftool.xindx.shape))
         for i in range(mean_x.shape[0]):
             for j in range(mean_x.shape[1]):
-                if psftool.good_psflets[i, j]:
+                if psftool.good[i, j]:
                     fit = interpolate.interp1d(np.asarray(lam_hires), longsigarr[:, i, j],
                                                bounds_error=False, fill_value='extrapolate')
                     fullsigarr[i, j] = fit(psftool.lam_indx[i, j])
@@ -1352,15 +1350,14 @@ def buildcalibrations(
 
     if makePolychrome:
         if not makehiresPSFlets:
-            hires_arrs = [
-                fits.open(filename)[0].data for filename in hires_list]
+            hires_arrs = [fits.open(filename)[0].data for filename in hires_list]
 
         lam_midpts, lam_endpts = calculateWaveList(par, lam, method='lstsq')
         Nspec = len(lam_endpts)
         polyimage = np.zeros((Nspec - 1, ysize, xsize))
         xpos = []
         ypos = []
-        good_psflets = []
+        good = []
 
         log.info('Making polychrome cube')
 
@@ -1384,11 +1381,11 @@ def buildcalibrations(
                 if finecal:
                     _x += finexy[0]
                     _y += finexy[1]
-                _good_psflets = (_x > borderpix) * (_x < xsize - borderpix) * \
+                _good = (_x > borderpix) * (_x < xsize - borderpix) * \
                     (_y > borderpix) * (_y < ysize - borderpix)
                 xpos += [_x]
                 ypos += [_y]
-                good_psflets += [_good_psflets]
+                good += [_good]
         else:
             tasks = multiprocessing.Queue()
             results = multiprocessing.Queue()
@@ -1425,11 +1422,11 @@ def buildcalibrations(
                 if finecal:
                     _x += finexy[0]
                     _y += finexy[1]
-                _good_psflets = (_x > borderpix) * (_x < xsize - borderpix) * \
+                _good = (_x > borderpix) * (_x < xsize - borderpix) * \
                     (_y > borderpix) * (_y < ysize - borderpix)
                 xpos += [_x]
                 ypos += [_y]
-                good_psflets += [_good_psflets]
+                good += [_good]
 
         log.info('Saving polychrome cube')
         polyimage[polyimage < threshold] = 0.0
@@ -1451,7 +1448,7 @@ def buildcalibrations(
         lam_midpts, lam_endpts = calculateWaveList(par, lam, method='lstsq')
         xpos = []
         ypos = []
-        good_psflets = []
+        good = []
 
         for i in range(len(lam_midpts)):
             _x, _y = psftool.return_locations(
@@ -1459,17 +1456,17 @@ def buildcalibrations(
             if finecal:
                 _x += finexy[0]
                 _y += finexy[1]
-            _good_psflets = (_x > borderpix) * (_x < xsize - borderpix) * \
+            _good = (_x > borderpix) * (_x < xsize - borderpix) * \
                 (_y > borderpix) * (_y < ysize - borderpix)
             xpos += [_x]
             ypos += [_y]
-            good_psflets += [_good_psflets]
+            good += [_good]
 
     log.info('Saving wavelength calibration cube')
     outkey = fits.HDUList(fits.PrimaryHDU(lam_midpts))
     outkey.append(fits.PrimaryHDU(np.asarray(xpos)))
     outkey.append(fits.PrimaryHDU(np.asarray(ypos)))
-    outkey.append(fits.PrimaryHDU(np.asarray(good_psflets).astype(np.uint8)))
+    outkey.append(fits.PrimaryHDU(np.asarray(good).astype(np.uint8)))
     outkey.writeto(outdir + 'polychromekeyR%d.fits' % (par.R), overwrite=True)
 
     if makehiresPolychrome:
