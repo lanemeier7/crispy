@@ -59,7 +59,7 @@ def do_inspection(par, image, xpos, ypos, lam, display_plot=False):
     xg, yg = xpos.shape
     vals = np.array([(xpos[m, n], ypos[m, n])
                      for m in range(xg) for n in range(yg)])
-    pos = (vals[:, 0], vals[:, 1])
+    # pos = (vals[:, 0], vals[:, 1])
     # aps = CircularAperture(pos, r=3)
 
     # Temporarily turn off interactive plotting until this function is complete
@@ -88,6 +88,7 @@ def make_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
                     xindx, yindx, ydim, xdim, finexy=None, reflam=None, upsample=10, nlam=10,
                     ):
     """
+    TODO, make a numpy-style docstring. Include some details about how "the polychrome" image is made. 
     """
 
     padding = 10
@@ -863,10 +864,8 @@ def fit_monochromatic_cube(cube,
 
 
 def monochromatic_update(par, inImage, inLam, order=3, apodize=False):
-    log.info(
-        "Making copies of wavelength solution from " +
-        par.wavecalDir +
-        "/lamsol.dat")
+    #TODO, add docstring. inImage is an Image object that contains the monochromatic image
+    log.info(f"Making copies of wavelength solution from {par.wavecalDir} /lamsol.dat")
     copy2(par.wavecalDir + "/lamsol.dat", par.wavecalDir + "/lamsol_old.dat")
     lamsol = np.loadtxt(os.path.join(par.wavecalDir, "lamsol.dat"))
     lam = lamsol[:, 0]
@@ -893,15 +892,7 @@ def monochromatic_update(par, inImage, inLam, order=3, apodize=False):
 
     indx = np.asarray([0, 1, 4, 10, 11, 14])
     psftool.interp_arr[0][indx] += dcoef[indx]
-    psftool.genpixsol(
-        par,
-        lam,
-        allcoef,
-        order=order,
-        lam1=min(lam) /
-        1.01,
-        lam2=max(lam) *
-        1.01)
+    psftool.genpixsol(par, lam, allcoef, order=order, lam1=min(lam)/1.01, lam2=max(lam)*1.01)
     psftool.savepixsol(outdir=par.wavecalDir)
 
     #################################################################
@@ -1106,8 +1097,8 @@ def buildcalibrations(
     coef = initcoef  # Initial guess for polynomial coefficients
     allcoef = []  # List to store polynomial coefficients for each wavelength
     imlist = []  # List to store calibration images
-    xlist = []  # List to store x-coordinates of PSFlet centers
-    ylist = []  # List to store y-coordinates of PSFlet centers
+    # xlist = []  # List to store x-coordinates of PSFlet centers
+    # ylist = []  # List to store y-coordinates of PSFlet centers
     dylist = []  # List to store y-offsets from polynomial fit for fine calibration
     dxlist = []  # List to store x-offsets from polynomial fit for fine calibration
     snrlist = []  # List to store SNR values for fine calibration
@@ -1345,9 +1336,13 @@ def buildcalibrations(
                                                bounds_error=False, fill_value='extrapolate')
                     sigma_vs_pixelwavelength[i, j] = fit(psftool.lam_indx[i, j])
 
+        # Save this cube of PSFwidths vs. pixel wavelengths to a .fits file
+        log.info("Saving PSFLet widths to " + outdir + "PSFwidths.fits")
         out = fits.HDUList(fits.PrimaryHDU(sigma_vs_pixelwavelength.astype(np.float32)))
         out.writeto(outdir + 'PSFwidths.fits', overwrite=True)
 
+        # Also save this to a .fits file with the contents of PSFloc.fits for convenience
+        log.info("Also saving PSFLet widths to " + outdir + "calib.fits along with PSFloc.fits contents")
         calib_hdus = fits.open(outdir + 'PSFloc.fits')
         outkey = fits.HDUList(calib_hdus[0])
         outkey.append(calib_hdus[1])
@@ -1361,17 +1356,22 @@ def buildcalibrations(
         if not makehiresPSFlets:
             hires_arrs = [fits.open(filename)[0].data for filename in hires_list]
 
+        # Create an array of wavelengths that represent the midpoints/endpoints of the wavelength bins
         lam_midpts, lam_endpts = calculateWaveList(par, lam, method='lstsq')
-        Nspec = len(lam_endpts)
+        # TODO, rename all instances of 'Nspec' to 'num_wavelengths' for clarity. 
+        Nspec = len(lam_endpts)  # The number of unique wavelength bins
         polyimage = np.zeros((Nspec - 1, ysize, xsize))
+
+        # Initialize some arrays where we will store information about the x/y position of each PSF, 
+        # as well as whether or not that PSF is "good" (i.e. falls on the detector)
         xpos = []
         ypos = []
         good = []
 
         log.info('Making polychrome cube')
-
         if not parallel:
             for i in range(Nspec - 1):
+                log.info(f'  Wavelength bin {i + 1} of {Nspec - 1}')
                 polyimage[i] = (lam_endpts[i + 1] - lam_endpts[i]) * make_polychrome(lam_endpts[i],
                                                                                      lam_endpts[i + 1],
                                                                                      hires_arrs,
@@ -1385,11 +1385,12 @@ def buildcalibrations(
                                                                                      finexy=finexy,
                                                                                      reflam=lam,
                                                                                      upsample=upsample,)
-                _x, _y = psftool.return_locations(
-                    lam_midpts[i], allcoef, xindx, yindx)
+                _x, _y = psftool.return_locations(lam_midpts[i], allcoef, xindx, yindx)
                 if finecal:
                     _x += finexy[0]
                     _y += finexy[1]
+
+                # Append the x/y positions and "good" boolean array to the lists
                 _good = (_x > borderpix) * (_x < xsize - borderpix) * \
                     (_y > borderpix) * (_y < ysize - borderpix)
                 xpos += [_x]
@@ -1431,6 +1432,8 @@ def buildcalibrations(
                 if finecal:
                     _x += finexy[0]
                     _y += finexy[1]
+
+                # Append the x/y positions and "good" boolean array to the lists
                 _good = (_x > borderpix) * (_x < xsize - borderpix) * \
                     (_y > borderpix) * (_y < ysize - borderpix)
                 xpos += [_x]
@@ -1440,18 +1443,9 @@ def buildcalibrations(
         log.info('Saving polychrome cube')
         polyimage[polyimage < threshold] = 0.0
         out = fits.HDUList(fits.PrimaryHDU(polyimage.astype(np.float32)))
-        out.writeto(outdir + 'polychromeR%d.fits.gz' % (par.R), overwrite=True)
-        out = fits.HDUList(
-            fits.PrimaryHDU(
-                np.sum(
-                    polyimage,
-                    axis=0).astype(
-                    np.float32)))
-        out.writeto(
-            outdir +
-            'polychromeR%dstack.fits.gz' %
-            (par.R),
-            overwrite=True)
+        out.writeto(f"{outdir}polychromeR{par.R}.fits.gz", overwrite=True)
+        out = fits.HDUList(fits.PrimaryHDU(np.sum(polyimage, axis=0).astype(np.float32)))
+        out.writeto(f"{outdir}polychromeR{par.R}stack.fits.gz", overwrite=True)
 
     else:
         lam_midpts, lam_endpts = calculateWaveList(par, lam, method='lstsq')
@@ -1471,22 +1465,19 @@ def buildcalibrations(
             ypos += [_y]
             good += [_good]
 
+    # Save an array with information about the x/y position of each PSF, as well as whether or not that PSF is "good"
     log.info('Saving wavelength calibration cube')
     outkey = fits.HDUList(fits.PrimaryHDU(lam_midpts))
     outkey.append(fits.PrimaryHDU(np.asarray(xpos)))
     outkey.append(fits.PrimaryHDU(np.asarray(ypos)))
     outkey.append(fits.PrimaryHDU(np.asarray(good).astype(np.uint8)))
-    outkey.writeto(outdir + 'polychromekeyR%d.fits' % (par.R), overwrite=True)
+    outkey.writeto(f"{outdir}polychromekeyR{par.R}.fits", overwrite=True)
 
     if makehiresPolychrome:
         log.info('Making high-resolution polychrome cube (can use lots of memory)')
         if not makehiresPSFlets:
-            hires_list = np.sort(
-                glob.glob(
-                    par.wavecalDir +
-                    'hires_psflets_lam???.fits'))
-            hires_arrs = [
-                fits.open(filename)[0].data for filename in hires_list]
+            hires_list = np.sort(glob.glob(f"{par.wavecalDir}hires_psflets_lam???.fits"))
+            hires_arrs = [fits.open(filename)[0].data for filename in hires_list]
 
         lam_midpts, lam_endpts = calculateWaveList(par, lam, method='lstsq')
         Nspec = len(lam_endpts)
@@ -1537,23 +1528,9 @@ def buildcalibrations(
                     (lam_endpts[index + 1] - lam_endpts[index]) / upsample**2
 
         log.info('Saving hi-res polychrome cube')
-
         out = fits.HDUList(fits.PrimaryHDU(hirespoly.astype(np.float32)))
-        out.writeto(
-            outdir +
-            'hirespolychromeR%d.fits.gz' %
-            (par.R),
-            overwrite=True)
-        out = fits.HDUList(
-            fits.PrimaryHDU(
-                np.sum(
-                    hirespoly,
-                    axis=0).astype(
-                    np.float32)))
-        out.writeto(
-            outdir +
-            'hiresPolychromeR%dstack.fits' %
-            (par.R),
-            overwrite=True)
+        out.writeto(f"{outdir}hirespolychromeR{par.R}.fits.gz", overwrite=True)
+        out = fits.HDUList(fits.PrimaryHDU(np.sum(hirespoly, axis=0).astype(np.float32)))
+        out.writeto(f"{outdir}hiresPolychromeR{par.R}stack.fits", overwrite=True)
 
-    log.info("Total time elapsed: %.0f s" % (time.time() - tstart))
+    log.info(f"Total time elapsed: {time.time() - tstart:.0f} s")

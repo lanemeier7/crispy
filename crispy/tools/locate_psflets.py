@@ -66,10 +66,7 @@ class PSFLets:
             self.nlam = hdulist[3].data.astype(int)
             self.good = hdulist[4].data.astype(int)
         except BaseException:
-            raise RuntimeError(
-                "File " +
-                infile +
-                " does not appear to contain a CHARIS wavelength solution in the appropriate format.")
+            raise RuntimeError(f"File {infile} does not appear to contain a CHARIS wavelength solution in the appropriate format.")
         self.nlam_max = np.amax(self.nlam)
 
     def savepixsol(self, outdir="calibrations/"):
@@ -90,11 +87,13 @@ class PSFLets:
         if not os.path.isdir(outdir):
             raise IOError(f"Attempting to save pixel solution to directory {outdir}.  Directory does not exist.")
         outfile = re.sub('//', '/', outdir + '/PSFloc.fits')
-        out = fits.HDUList(fits.PrimaryHDU(self.lam_indx))
-        out.append(fits.PrimaryHDU(self.xindx))
-        out.append(fits.PrimaryHDU(self.yindx))
-        out.append(fits.PrimaryHDU(self.nlam.astype(int)))
-        out.append(fits.PrimaryHDU(self.good.astype(int)))
+        out = fits.HDUList([
+            fits.PrimaryHDU(self.lam_indx),  # Primary HDU, no EXTNAME
+            fits.ImageHDU(self.xindx, name='XINDX'),
+            fits.ImageHDU(self.yindx, name='YINDX'),
+            fits.ImageHDU(self.nlam.astype(int), name='nlam'),
+            fits.ImageHDU(self.good.astype(int), name='good')
+        ])
         try:
             out.writeto(outfile, overwrite=True)
         except BaseException:
@@ -123,9 +122,9 @@ class PSFLets:
 
         self.interp_arr = np.zeros((order + 1, allcoef.shape[1]))
         self.order = order
-        log_wavelength_powers = np.ones((lam.shape[0], order + 1)) # Initialize an array of wavelength terms for fitting
+        log_wavelength_powers = np.ones((lam.shape[0], order + 1))  # Initialize an array of wavelength terms for fitting
         for i in range(1, order + 1):
-            log_wavelength_powers[:, i] = np.log(lam)**i # Why use the log of wavelength for fitting?
+            log_wavelength_powers[:, i] = np.log(lam)**i  # Why use the log of wavelength for fitting?
         for i in range(self.interp_arr.shape[1]):
             coef = np.linalg.lstsq(log_wavelength_powers, allcoef[:, i])[0]
             self.interp_arr[:, i] = coef
@@ -237,9 +236,9 @@ class PSFLets:
             Wavelength in nm
         allcoef: list of lists floats
             Polynomial coefficients of wavelength solution
-        xindx: int
+        xindx: int, or array of int
             X index of lenslet in lenslet array
-        yindx: int
+        yindx: int, or array of int
             Y index of lenslet in lenslet array
         order: int
             Order of polynomial wavelength solution
@@ -331,7 +330,7 @@ class PSFLets:
             Fine adjustments to x and y positions and SNR threshold.
         plot_wavelength_map : boolean
             Display a plot that helps relate the detector image to particular lenslets and wavelenghts. Helpful for troubleshooting. 
-            
+           
         Returns
         -------
         None
@@ -393,7 +392,7 @@ class PSFLets:
         y = np.zeros(x.shape)
         nlam = np.zeros(xindx.shape, np.int32)
         lam_out = np.zeros(y.shape)
-        good = np.ones(xindx.shape) # An array for tracking whether or not any interpolated wavelengths from this lenslet fall outside the detector
+        good = np.ones(xindx.shape)  # An array for tracking whether or not any interpolated wavelengths from this lenslet fall outside the detector
 
         # Apply SNR threshold if fine adjustments are provided
         if finexy is not None:
@@ -449,7 +448,7 @@ class PSFLets:
         self.lam_indx = lam_out[:, :, :nlam_max]  # wavelengths at int. pixel indices
         self.nlam_max = np.amax(nlam)
         self.good = good
-        
+       
         # Make a plot of pixel wavelengths vs pixel position
         if plot_wavelength_map:
             fig, ax = plt.subplots(figsize=(8, 6))
@@ -481,7 +480,7 @@ class PSFLets:
             ax.set_xlabel('pixels')
             ax.set_ylabel('pixels')
             ax.set_title('Lenslet + Wavelength Map')
-            cbar = fig.colorbar(scatter, ax=ax, label='Wavelength (nm)')
+            fig.colorbar(scatter, ax=ax, label='Wavelength (nm)')
             fig.tight_layout()
             plt.show()
 
@@ -633,9 +632,9 @@ def fine_transform(lam, x, y, reflam, xlistarr, ylistarr):
     reflam: float or 1D ndarray
         Reference wavelength array at which xlistarr and ylistarr were computed
     xlistarr:     ndarray
-        Centroids
+        Centroid coordinates
     ylistarr:     ndarray
-        Centroids
+        Centroid coordinates
 
     Returns
     -------
@@ -785,6 +784,7 @@ def corrval(coef, x, y, input_image, order, trimfrac=0.1, show_plots=False):
 
 def corrvalsum(coef, x, y, filtered, order, trimfrac=0.1, gsize=2):
     # TODO, is this function used anywhere in this repo? If not, comment it out. 
+    # TODO, add doscring
     _x, _y = transform(x, y, order, coef)
     ydim, xdim = filtered.shape
     s = 0.0
