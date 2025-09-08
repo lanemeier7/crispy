@@ -5,6 +5,8 @@ MJ Rizzo and the IFS team
 Originally inspired by T. Brandt's code for CHARIS
 '''
 
+from crispy.tools.imgtools import gausspsf
+from crispy.tools.locate_psflets import transform
 import numpy as np
 from astropy.io import fits as pyf
 import time
@@ -38,7 +40,7 @@ def polychromeIFS(par, inWavelist, inputcube,
                   wavecalDir=None,
                   noRot=False,
                   dx=0.0,
-                  upsample=3, # need to make this part of the header in the templates
+                  upsample=3,  # need to make this part of the header in the templates
                   npix=13,
                   nlam=10,
                   order=3
@@ -55,7 +57,6 @@ def polychromeIFS(par, inWavelist, inputcube,
     inputcube : Image
             or HDU. data is 3D ndarray with first dimension the same length as lamlist
             header needs to contain the 'PIXSIZE' and 'LAM_C' keywords 
-            # TODO "Why are these keywords necessary? Wouldn't it make more sense for these scalars to come from the parameter instance?" - Evan Bray 2025/08/12
     name: string
             Name of the output file (without .fits extension)
     parallel: boolean
@@ -69,8 +70,7 @@ def polychromeIFS(par, inWavelist, inputcube,
     lam_arr: list of floats
             Temporary input vector of the wavelengths used to construct the polychrome. This is necessary in order to construct
             the wavelength calibration files. If the bandpass changes, one needs to pass an array of wavelengths covering the
-            new bandpass. Need to work on this.
-            # TODO: Better explain this variable definition. What is "the polychrome"?
+            new bandpass.
     wavecal: string
         This can be used to add a distortion already measured from lab data, for example.
         Put in there the full folder name where we can find a 'lamsol.dat' file.
@@ -83,19 +83,18 @@ def polychromeIFS(par, inWavelist, inputcube,
     detectorFrame : 2D array
             Return the detector frame
     '''
-    
-    
+
     par.makeHeader()
     par.hdr.append(('comment', ''), end=True)
     par.hdr.append(('comment', '*' * 60), end=True)
-    par.hdr.append(('comment','*' * 22 + ' IFS Simulation ' + '*' * 18), end=True)
+    par.hdr.append(('comment', '*' * 22 + ' IFS Simulation ' + '*' * 18), end=True)
     par.hdr.append(('comment', '*' * 60), end=True)
     par.hdr.append(('comment', ''), end=True)
 
     # Grab some information about pixel size and center wavelength
     try:
-        input_sampling = inputcube.header['PIXSIZE'] # must be in units of Lambda/D
-        input_wav = inputcube.header['LAM_C'] * 1000. # must be in units of nanometers
+        input_sampling = inputcube.header['PIXSIZE']  # must be in units of Lambda/D
+        input_wav = inputcube.header['LAM_C'] * 1000.  # must be in units of nanometers
     except BaseException:
         log.error('Missing header information in input file')
         raise
@@ -120,7 +119,7 @@ def polychromeIFS(par, inWavelist, inputcube,
         end=True)
 
     nframes = inputcube.data.shape[0]
-    allweights = None # TODO, What is this variable? Add a helpful comment. 
+    allweights = None  # TODO, What is this variable? Add a helpful comment. 
 
     if inputcube.data.shape[0] != len(wavelist):
         log.error('Number of wavelengths does not match the number of input cube slices')
@@ -128,7 +127,7 @@ def polychromeIFS(par, inWavelist, inputcube,
     ######################################################################
     # Create cube that is corrected for QE and rebinning error, if necessary
     ######################################################################
-    waveList, interpolatedInputCube = prepareCube(par, wavelist, inputcube, QE=QE) #TODO rename all occurences of 'interpolatedInputCube' to 'processedInputCube'
+    waveList, interpolatedInputCube = prepareCube(par, wavelist, inputcube, QE=QE)  # TODO rename all occurences of 'interpolatedInputCube' to 'processedInputCube'
 
     ######################################################################
     # Initializing an array of times for performance monitoring
@@ -143,15 +142,8 @@ def polychromeIFS(par, inWavelist, inputcube,
     ######################################################################
     # Allocate arrays that will get filled in later, make sure you have abundant memory
     ######################################################################
-    finalFrame = np.zeros( #TODO, add an informational comment about what 'finalFrame' is supposed to be
-        (par.npix * par.pxperdetpix,
-         par.npix * par.pxperdetpix))
-    polyimage = np.zeros( #TODO, add an informational comment about what 'polyimage' is supposed to be
-        (len(waveList),
-         par.npix *
-         par.pxperdetpix,
-         par.npix *
-         par.pxperdetpix))
+    finalFrame = np.zeros((par.npix * par.pxperdetpix, par.npix * par.pxperdetpix))
+    polyimage = np.zeros((len(waveList), par.npix * par.pxperdetpix, par.npix * par.pxperdetpix))
 
     ######################################################################
     # Determine wavelength endpoints if they were not already calculated
@@ -179,13 +171,13 @@ def polychromeIFS(par, inWavelist, inputcube,
     if lam_arr is None:
         lam_arr = np.loadtxt(par.wavecalDir + "lamsol.dat")[:, 0]
 
-    hires_arrs = [] # TODO, Add a comment that describes what this variable is supposed to represent. Rename all occurence of this variable to 'high_res_arrays'  
+    hires_arrs = []  # TODO, Add a comment that describes what this variable is supposed to represent. Rename all occurence of this variable to 'high_res_arrays'  
     if par.gaussian:
         for i in range(len(lam_arr)):
-            hiresarr = get_sim_hires(par, lam_arr[i]) # TODO rename all occurences of this variable to 'high_res_array'
+            hiresarr = get_sim_hires(par, lam_arr[i])  # TODO rename all occurences of this variable to 'high_res_array'
             hires_arrs += [hiresarr]
         log.info('Creating Gaussian PSFLet templates')
-        upsample=10
+        upsample = 10
     else:
         try:
             hires_list = np.sort(glob.glob(par.wavecalDir + 'hires_psflets_lam???.fits'))
@@ -250,32 +242,15 @@ def polychromeIFS(par, inWavelist, inputcube,
             polyimage[index] = poly
 
     if par.saveRotatedInput:
-        Image(
-            data=np.array(inputCube),
-            header=par.hdr).write(
-            par.exportDir +
-            '/imagePlaneRot.fits')
+        Image(data=np.array(inputCube), header=par.hdr).write(par.exportDir + '/imagePlaneRot.fits')
     if par.savePoly:
-        Image(
-            data=polyimage,
-            header=par.hdr).write(
-            par.exportDir +
-            '/' +
-            name +
-            'poly.fits')
-
+        Image(data=polyimage, header=par.hdr).write(par.exportDir + '/' + name + 'poly.fits')
     detectorFrame = np.sum(polyimage, axis=0)
 
     if par.pxperdetpix != 1.:
         detectorFrame = rebinDetector(par, detectorFrame, clip=False)
     if par.saveDetector:
-        Image(
-            data=detectorFrame,
-            header=par.hdr).write(
-            par.exportDir +
-            '/' +
-            name +
-            '.fits')
+        Image(data=detectorFrame, header=par.hdr).write(par.exportDir + '/' + name + '.fits')
     log.info('Done.')
     t['End'] = time.time()
     log.info("Performance: %d seconds total" % (t['End'] - t['Start']))
@@ -331,22 +306,13 @@ def reduceIFSMap(
     else:
         par.hdr.append(('comment', ''), end=True)
         par.hdr.append(('comment', '*' * 60), end=True)
-        par.hdr.append(
-            ('comment',
-             '*' *
-             22 +
-             ' Cube Extraction ' +
-             '*' *
-             21),
-            end=True)
+        par.hdr.append(('comment', '*' * 22 + ' Cube Extraction ' + '*' * 21), end=True)
         par.hdr.append(('comment', '*' * 60), end=True)
         par.hdr.append(('comment', ''), end=True)
         par.hdr.append(
             ('R', par.R, 'Spectral resolution of final cube'), end=True)
         par.hdr.append(('CALDIR', par.wavecalDir.split(
             '/')[-2], 'Directory of wavelength solution'), end=True)
-            
-
 
     if isinstance(IFSimageName, str):
         IFSimage = Image(filename=IFSimageName)
@@ -359,26 +325,20 @@ def reduceIFSMap(
             reducedName = name
 
     mean, median, std = sigma_clipped_stats(IFSimage.data, sigma=3.0, maxiters=5)
-    log.info("Mean, median, std: {:}".format((mean,median,std)))
-    par.hdr.append(
-        ('MEAN', mean, 'Mean of image'), end=True)
-    par.hdr.append(
-        ('MED', median, 'Median of image'), end=True)
-    par.hdr.append(
-        ('STD', std, 'Std of image'), end=True)
-    
+    log.info("Mean, median, std: {:}".format((mean, median, std)))
+    par.hdr.append(('MEAN', mean, 'Mean of image'), end=True)
+    par.hdr.append(('MED', median, 'Median of image'), end=True)
+    par.hdr.append(('STD', std, 'Std of image'), end=True)
+
     if medsub:
         IFSimage.data -= median
-        par.hdr.append(
-            ('MEDSUB', True, 'Subtract median from image'), end=True)
+        par.hdr.append(('MEDSUB', True, 'Subtract median from image'), end=True)
         log.info('Subtracting median from image')
     else:
-        par.hdr.append(
-            ('MEDSUB', False, 'Subtract median from image'), end=True)
+        par.hdr.append(('MEDSUB', False, 'Subtract median from image'), end=True)
 
     if pixnoise is None:
-        pixnoise=std**2
-
+        pixnoise = std**2
 
     if method in ['lstsq', 'lstsq_conv', 'RL', 'RL_conv']:
         reducedName += '_red_' + method
@@ -401,24 +361,11 @@ def reduceIFSMap(
             gain=gain)
     elif method == 'optext':
         reducedName += '_red_optext'
-        cube = intOptimalExtract(
-            par,
-            par.exportDir +
-            '/' +
-            reducedName,
-            IFSimage,
-            smoothandmask=smoothbad)
+        cube = intOptimalExtract(par, par.exportDir + '/' + reducedName, IFSimage, smoothandmask=smoothbad)
     elif method == 'sum':
         reducedName += '_red_sum'
-        cube = intOptimalExtract(
-            par,
-            par.exportDir +
-            '/' +
-            reducedName,
-            IFSimage,
-            smoothandmask=smoothbad,
-            sum=True)
-        
+        cube = intOptimalExtract(par, par.exportDir + '/' + reducedName, IFSimage, smoothandmask=smoothbad, sum=True)
+
     else:
         log.info("Method not found")
 
@@ -461,27 +408,17 @@ def reduceIFSMapList(
     else:
         par.hdr.append(('comment', ''), end=True)
         par.hdr.append(('comment', '*' * 60), end=True)
-        par.hdr.append(
-            ('comment',
-             '*' *
-             22 +
-             ' Cube Extraction ' +
-             '*' *
-             21),
-            end=True)
+        par.hdr.append(('comment', '*' * 22 + ' Cube Extraction ' + '*' * 21), end=True)
         par.hdr.append(('comment', '*' * 60), end=True)
         par.hdr.append(('comment', ''), end=True)
-        par.hdr.append(
-            ('R', par.R, 'Spectral resolution of final cube'), end=True)
-        par.hdr.append(('CALDIR', par.wavecalDir.split(
-            '/')[-2], 'Directory of wavelength solution'), end=True)
+        par.hdr.append(('R', par.R, 'Spectral resolution of final cube'), end=True)
+        par.hdr.append(('CALDIR', par.wavecalDir.split('/')[-2], 'Directory of wavelength solution'), end=True)
 
     if parallel:
         tasks = multiprocessing.Queue()
         results = multiprocessing.Queue()
         ncpus = multiprocessing.cpu_count()
-        consumers = [Consumer(tasks, results)
-                     for i in range(ncpus)]
+        consumers = [Consumer(tasks, results) for i in range(ncpus)]
         for w in consumers:
             w.start()
 
@@ -491,28 +428,10 @@ def reduceIFSMapList(
             reducedName = IFSimageNameList[i].split('/')[-1].split('.')[0]
             if method == 'lstsq':
                 reducedName += '_red_lstsq'
-                tasks.put(
-                    Task(
-                        i,
-                        lstsqExtract,
-                        (par,
-                         par.exportDir +
-                         '/' +
-                         reducedName,
-                         IFSimage,
-                         smoothbad)))
+                tasks.put(Task(i, lstsqExtract, (par, par.exportDir + '/' + reducedName, IFSimage, smoothbad)))
             elif method == 'optext':
                 reducedName += '_red_optext'
-                tasks.put(
-                    Task(
-                        i,
-                        intOptimalExtract,
-                        (par,
-                         par.exportDir +
-                         '/' +
-                         reducedName,
-                         IFSimage,
-                         smoothbad)))
+                tasks.put(Task(i, intOptimalExtract, (par, par.exportDir + '/' + reducedName, IFSimage, smoothbad)))
             else:
                 log.info("Method not found")
 
@@ -528,34 +447,27 @@ def reduceIFSMapList(
             reducedName = IFSimageNameList[i].split('/')[-1].split('.')[0]
             if method == 'lstsq':
                 reducedName += '_red_lstsq'
-                cube = lstsqExtract(
-                    par,
-                    par.exportDir +
-                    '/' +
-                    reducedName,
-                    IFSimage,
-                    smoothbad)
+                cube = lstsqExtract(par, par.exportDir + '/' + reducedName, IFSimage, smoothbad)
             elif method == 'optext':
                 reducedName += '_red_optext'
-                cube = intOptimalExtract(
-                    par, par.exportDir + '/' + reducedName, IFSimage, smoothbad)
+                cube = intOptimalExtract(par, par.exportDir + '/' + reducedName, IFSimage, smoothbad)
             else:
                 log.info("Method not found")
-
     log.info('Elapsed time: %fs' % (time.time() - start))
 
-def getQE(par,wavelist):
+
+def getQE(par, wavelist):
     if isinstance(par.QE, str):
         loadQE = np.loadtxt(par.codeRoot + "/" + par.QE)
         QEinterp = interp1d(loadQE[:, 0], loadQE[:, 1])
         QEvals = QEinterp(wavelist)
     else:
-        if hasattr(wavelist,'__len__'):
+        if hasattr(wavelist, '__len__'):
             QEvals = par.QE * np.ones(len(wavelist))
         else:
             QEvals = par.QE
     return QEvals
-    
+
 
 def prepareCube(par, wavelist, incube, QE=True, adjustment=1.0):
     '''
@@ -566,14 +478,14 @@ def prepareCube(par, wavelist, incube, QE=True, adjustment=1.0):
     # The function that called this said that some wavelength resampling might need to be done, but I see no wavelength resampling happening here. 
     '''
 
-    #TODO is 'INSLICES' deprecated? Are there any instances where a header card by such a name would be added to 'par'?
+    # TODO is 'INSLICES' deprecated? Are there any instances where a header card by such a name would be added to 'par'?
     if 'INSLICES' not in par.hdr:
         par.hdr.append(('INSLICES', len(wavelist), 'Number of wavelengths in input cube'), end=True)
         par.hdr.append(('ADJUST', adjustment, 'Adjustment factor for rebinning error'), end=True)
 
     inputcube = Image(data=incube.data.copy(), header=incube.header)
     if QE:
-        QEvals = getQE(par,wavelist)
+        QEvals = getQE(par, wavelist)
 
         if "APPLYQE" not in par.hdr:
             par.hdr.append(('APPLYQE', QE, 'Applied quantum efficiency?'), end=True)
@@ -631,15 +543,15 @@ def createWavecalFiles(par, lamlist, dlam=1., flux=None, background=0.0):
         # note the argument lam_arr, necessary when computing things for the
         # first time
         detectorFrame = polychromeIFS(
-                                    par,
-                                    [wav],
-                                    inCube[0],
-                                    dlambda=dlam,
-                                    parallel=False,
-                                    lam_arr=lamlist)
+            par,
+            [wav],
+            inCube[0],
+            dlambda=dlam,
+            parallel=False,
+            lam_arr=lamlist)
         if flux is not None:
-            detectorFrame /= getQE(par,wav)*(par.lensletsampling/inCube[0].header['PIXSIZE'])**2
-            detectorFrame = np.random.poisson(flux*detectorFrame+background)
+            detectorFrame /= getQE(par, wav) * (par.lensletsampling / inCube[0].header['PIXSIZE'])**2
+            detectorFrame = np.random.poisson(flux * detectorFrame + background)
         filename = par.wavecalDir + 'det_%3d.fits' % (wav)
         filelist.append(filename)
         Image(data=detectorFrame, header=par.hdr).write(filename, overwrite=True)
@@ -647,20 +559,18 @@ def createWavecalFiles(par, lamlist, dlam=1., flux=None, background=0.0):
     par.filelist = filelist
     return filelist
 
-from crispy.tools.locate_psflets import transform
-from crispy.tools.imgtools import gausspsf
 
 def quickMonochromatic(par=None, 
-                        fwhm =2.0,
-                        coefs = None,
-                        Dx = 0.0,
-                        Dy = 0.0,
-                        flux = 1.0,
-                        gsize = 5,
-                        order = 3,
-                        nlens = 108,
-                        npix = 1024,
-                        returnCoords = False):
+                       fwhm=2.0,
+                       coefs=None,
+                       Dx=0.0,
+                       Dy=0.0,
+                       flux=1.0,
+                       gsize=5,
+                       order=3,
+                       nlens=108,
+                       npix=1024,
+                       returnCoords=False):
 
     if coefs is None:
         if par is None: 
@@ -669,36 +579,36 @@ def quickMonochromatic(par=None,
             scale = par.pitch / par.pixsize
             cphi = np.cos(par.philens)
             sphi = np.sin(par.philens)
-            Xcoefs = np.array([par.npix//2+Dx,cphi*scale,0.0,0.,-sphi*scale,0.0,0.0,0.0,0.0,0.0])
-            Ycoefs = np.array([par.npix//2+Dy,sphi*scale,0.0,0.,cphi*scale,0.0,0.0,0.0,0.0,0.0])
-            coefs = np.concatenate([Xcoefs,Ycoefs])
-    
+            Xcoefs = np.array([par.npix // 2 + Dx, cphi * scale, 0.0, 0., -sphi * scale, 0.0, 0.0, 0.0, 0.0, 0.0])
+            Ycoefs = np.array([par.npix // 2 + Dy, sphi * scale, 0.0, 0., cphi * scale, 0.0, 0.0, 0.0, 0.0, 0.0])
+            coefs = np.concatenate([Xcoefs, Ycoefs])
+
     if par is not None:
         nlens = par.nlens
         npix = par.npix
-    
+
     xindx = np.arange(-nlens / 2, nlens / 2)
     xindx, yindx = np.meshgrid(xindx, xindx)
-    
-    Xc, Yc = transform(xindx,yindx,order,coefs)
-    
-    lx = npix+2*gsize
-    detectorFrame = np.zeros((lx,lx))
-    ry = np.reshape(Yc,-1)
-    rx = np.reshape(Xc,-1)
-    for i in range(len(ry)):
-            yi = ry[i]+gsize
-            xi = rx[i]+gsize
-            xmin = int(xi)-gsize
-            xmax = xmin+2*gsize
-            ymin = int(yi)-gsize
-            ymax = ymin+2*gsize
-            if ymin>0 and xmin>0 and xmax<lx and ymax<lx:
-                dx = xi - np.floor(xi) + 0.5
-                dy = yi - np.floor(yi) + 0.5
-                detectorFrame[ymin:ymax,xmin:xmax]+=flux*gausspsf(size=2*gsize,fwhm=fwhm,offx=-dx,offy=-dy)
 
-    detectorFrame = detectorFrame[gsize:-gsize,gsize:-gsize]
+    Xc, Yc = transform(xindx, yindx, order, coefs)
+
+    lx = npix + 2 * gsize
+    detectorFrame = np.zeros((lx, lx))
+    ry = np.reshape(Yc, -1)
+    rx = np.reshape(Xc, -1)
+    for i in range(len(ry)):
+        yi = ry[i] + gsize
+        xi = rx[i] + gsize
+        xmin = int(xi) - gsize
+        xmax = xmin + 2 * gsize
+        ymin = int(yi) - gsize
+        ymax = ymin + 2 * gsize
+        if ymin > 0 and xmin > 0 and xmax < lx and ymax < lx:
+            dx = xi - np.floor(xi) + 0.5
+            dy = yi - np.floor(yi) + 0.5
+            detectorFrame[ymin:ymax, xmin:xmax] += flux * gausspsf(size=2 * gsize, fwhm=fwhm, offx=-dx, offy=-dy)
+
+    detectorFrame = detectorFrame[gsize:-gsize, gsize:-gsize]
     if returnCoords:
-        return detectorFrame,(Xc, Yc)
+        return detectorFrame, (Xc, Yc)
     return detectorFrame

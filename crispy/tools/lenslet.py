@@ -15,8 +15,6 @@ from crispy.tools.locate_psflets import initcoef, transform, PSFLets
 
 def processImagePlane(par, imagePlane, noRot=False):
     '''
-    Function processImagePlane
-
     Rotates an image or slice, and rebins in a flux-conservative way
     on an array of lenslets, using the plate scale provided in par.pixperlenslet.
     Each pixel represents the flux within a lenslet. Starts by padding the original
@@ -36,8 +34,7 @@ def processImagePlane(par, imagePlane, noRot=False):
             Rotated image plane on same sampling as original.
     '''
 
-    paddedImagePlane = np.zeros(
-        (int(imagePlane.shape[0] * np.sqrt(2)), int(imagePlane.shape[1] * np.sqrt(2))))
+    paddedImagePlane = np.zeros((int(imagePlane.shape[0] * np.sqrt(2)), int(imagePlane.shape[1] * np.sqrt(2))))
 
     xdim, ydim = paddedImagePlane.shape
     xpad = xdim - imagePlane.shape[0]
