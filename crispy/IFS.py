@@ -119,7 +119,8 @@ def polychromeIFS(par, inWavelist, inputcube,
         end=True)
 
     nframes = inputcube.data.shape[0]
-    allweights = None  # TODO, What is this variable? Add a helpful comment. 
+    # Variable for storing weight maps for each wavelength slice (currently unused)
+    allweights = None 
 
     if inputcube.data.shape[0] != len(wavelist):
         log.error('Number of wavelengths does not match the number of input cube slices')
@@ -171,17 +172,18 @@ def polychromeIFS(par, inWavelist, inputcube,
     if lam_arr is None:
         lam_arr = np.loadtxt(par.wavecalDir + "lamsol.dat")[:, 0]
 
-    hires_arrs = []  # TODO, Add a comment that describes what this variable is supposed to represent. Rename all occurence of this variable to 'high_res_arrays'  
+    # List to store high-resolution PSF arrays for each wavelength
+    high_res_arrays = []  
     if par.gaussian:
         for i in range(len(lam_arr)):
-            hiresarr = get_sim_hires(par, lam_arr[i])  # TODO rename all occurences of this variable to 'high_res_array'
-            hires_arrs += [hiresarr]
+            high_res_array = get_sim_hires(par, lam_arr[i])  # TODO rename all occurences of this variable to 'high_res_array'
+            high_res_arrays += [high_res_array]
         log.info('Creating Gaussian PSFLet templates')
         upsample = 10
     else:
         try:
             hires_list = np.sort(glob.glob(par.wavecalDir + 'hires_psflets_lam???.fits'))
-            hires_arrs = [pyf.getdata(filename) for filename in hires_list]
+            high_res_arrays = [pyf.getdata(filename) for filename in hires_list]
             log.info('Loaded PSFLet templates')
         except BaseException:
             log.error('Failed loading the PSFLet templates')
@@ -193,7 +195,8 @@ def polychromeIFS(par, inWavelist, inputcube,
     # Fill out the polyimage array
     if not parallel:
         for i in range(len(waveList)):
-            # TODO, add an informational comment about what imagePlaneRot represents. 
+            # Process and rotate the image plane for this wavelength slice, 
+            # then scale by wavelength bin width for flux conservation
             imagePlaneRot = (wavelist_endpts[i + 1] - wavelist_endpts[i]) * \
                 processImagePlane(par, interpolatedInputCube.data[i], noRot)
             inputCube += [imagePlaneRot]
@@ -201,7 +204,7 @@ def polychromeIFS(par, inWavelist, inputcube,
                                              imagePlaneRot,
                                              wavelist_endpts[i],
                                              wavelist_endpts[i + 1],
-                                             hires_arrs,
+                                             high_res_arrays,
                                              lam_arr,
                                              upsample,
                                              nlam,
@@ -227,7 +230,7 @@ def polychromeIFS(par, inWavelist, inputcube,
                             imagePlaneRot,
                             wavelist_endpts[i],
                                wavelist_endpts[i + 1],
-                               hires_arrs,
+                               high_res_arrays,
                                lam_arr,
                                upsample,
                                nlam,

@@ -390,15 +390,37 @@ def make_hires_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
     return hiresimg
 
 
-def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, renorm=True):
+def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, normalize=True):
     """
     Build high resolution images of the undersampled PSF using the
     monochromatic frames. This version of the function uses the perfect
     knowledge of the Gaussian PSFLet. Only valid if par.gaussian=True.
     All PSFLets are the same across the entire FOV
 
-    # TODO improve this docstring with Numpy style
-    # TODO rename all instances of 'renorm' to 'normalize'
+    Parameters
+    ----------
+    par : object
+        Parameter object containing FWHM, FWHMlam, and gaussian attributes
+    lam : float
+        Wavelength for which to generate the high resolution PSF
+    upsample : int, optional
+        Upsampling factor for the high resolution array. Default is 10
+    nsubarr : int, optional
+        Number of subarrays in each dimension. Default is 1
+    npix : int, optional
+        Number of pixels in the base PSF. Default is 13
+    normalize : bool, optional
+        Whether to normalizealize the PSFlet. Default is True
+        
+    Returns
+    -------
+    hires_arr : ndarray
+        4D array of shape (nsubarr, nsubarr, array_size, array_size) containing
+        the high resolution PSFlets
+        
+    Notes
+    -----
+    # TODO rename all instances of 'normalize' to 'normalize'
     """
     # Determine side length of the upsampled array
     array_size = upsample * (npix + 1)  
@@ -419,7 +441,7 @@ def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, renorm=True):
      erf((_y - 0.5) / (np.sqrt(2) * sigma_scaled)))
 
     # Normalize the PSFLet, if desired
-    if renorm:
+    if normalize:
         psflet *= upsample**2 / np.sum(psflet)
 
     # Because the output is expected to ahve nsubarr * nsubarr entries, fill the array with the same PSFLet
@@ -469,7 +491,7 @@ def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, renorm=True):
 #     return epsf.data
 #             
 
-def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, renorm=True):
+def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, normalize=True):
     """
     Build high resolution images of the undersampled PSF using the
     monochromatic frames.
@@ -641,13 +663,13 @@ def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, renorm=True):
             # interpolator.
             ############################################################
 
-            if renorm:
+            if normalize:
                 meanpsf *= upsample**2 / np.sum(meanpsf)
             hires_arr[yreg, xreg] = meanpsf
 
     return hires_arr
 
-# def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, renorm=True):
+# def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, normalize=True):
 #     """
 #     Build high resolution images of the undersampled PSF using the
 #     monochromatic frames.
@@ -673,7 +695,7 @@ def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, renorm=True):
 #             j2 = min(j2, data.shape[1] - npix)
 #             subim = data[i1:i2,j1:j2]
 #             hires_arr[yreg,xreg] = epsflets(subim,upsample,npix)
-#             if renorm:
+#             if normalize:
 #                 hires_arr[yreg,xreg] *= upsample**2 / np.sum(hires_arr[yreg,xreg])
 # 
 #     return hires_arr
@@ -768,19 +790,19 @@ def makeHires(
         for i in range(ncpus):
             tasks.put(None)
         for i in range(len(lam)):
-            index, hiresarr = results.get()
-            hires_arrs += [hiresarr]
+            index, high_res_array = results.get()
+            hires_arrs += [high_res_array]
 
             if savehiresimages:
-                di, dj = hiresarr.shape[0], hiresarr.shape[2]
+                di, dj = high_res_array.shape[0], high_res_array.shape[2]
                 outim = np.zeros((di * dj, di * dj))
                 for ii in range(di):
                     for jj in range(di):
                         outim[ii * dj:(ii + 1) * dj, jj *
-                              dj:(jj + 1) * dj] = hiresarr[ii, jj]
+                              dj:(jj + 1) * dj] = high_res_array[ii, jj]
                 out = fits.HDUList(
                     fits.PrimaryHDU(
-                        hiresarr.astype(
+                        high_res_array.astype(
                             np.float32)))
                 out.writeto(
                     par.wavecalDir +
@@ -791,7 +813,7 @@ def makeHires(
         log.info('No parallel computation')
         for i in range(len(lam)):
             if par.gaussian_hires:
-                hiresarr = get_sim_hires(par, lam[i], upsample, nsubarr)
+                high_res_array = get_sim_hires(par, lam[i], upsample, nsubarr)
             else:
                 # if finexy is None:
                 #     xpos, ypos = psftool.return_locations(
@@ -807,18 +829,21 @@ def makeHires(
                 good = np.reshape(psftool.good, -1)
                 xpos = np.reshape(xpos, -1)
                 ypos = np.reshape(ypos, -1)
-                hiresarr = gethires(xpos, ypos, good, imlist[i], upsample, nsubarr)
-            hires_arrs += [hiresarr]
+                high_res_array = gethires(xpos, ypos, good, imlist[i], upsample, nsubarr)
+            hires_arrs += [high_res_array]
 
-            # TODO, in one iteration, savehiresimages equaled 3 here. How could this happen?
+            # Validate savehiresimages parameter - should be boolean
+            if not isinstance(savehiresimages, bool):
+                raise ValueError(f"savehiresimages must be boolean (True/False), got {type(savehiresimages).__name__}: {savehiresimages}")
+            
             if savehiresimages:
                 # Apparently deprecated code that didn't get used? Commenting it out for now. 
-                # di, dj = hiresarr.shape[0], hiresarr.shape[2]
+                # di, dj = high_res_array.shape[0], high_res_array.shape[2]
                 # outim = np.zeros((di * dj, di * dj))
                 # for ii in range(di):
                 #     for jj in range(di):
-                #         outim[ii * dj:(ii + 1) * dj, jj * dj:(jj + 1) * dj] = hiresarr[ii, jj]
-                out = fits.HDUList(fits.PrimaryHDU(hiresarr.astype(np.float32)))
+                #         outim[ii * dj:(ii + 1) * dj, jj * dj:(jj + 1) * dj] = high_res_array[ii, jj]
+                out = fits.HDUList(fits.PrimaryHDU(high_res_array.astype(np.float32)))
                 out.writeto(par.wavecalDir + 'hires_psflets_lam%d.fits' % (lam[i]), overwrite=True)
 
     return hires_arrs
@@ -1061,7 +1086,7 @@ def buildcalibrations(
                             - an array of the Y positions of all lenslets
                             - an array of booleans indicating whether that lenslet is good or not
                             (e.g. when it is outside of the detector area)
-    polychromeRXX.fits: 3D arrays of size Nspec x Npix x Npix with maps of the PSFLets put in their correct
+    polychromeRXX.fits: 3D arrays of size num_wavelengths x Npix x Npix with maps of the PSFLets put in their correct
                         positions for each wavelength bins that we want in the output cube. Each PSFLet
                         in each wavelength slice is used for least-squares fitting.
     hiresPolychromeRXX.fits: same as polychromeRXX.fits but this time using the high-resolution PSFLets
@@ -1358,9 +1383,9 @@ def buildcalibrations(
 
         # Create an array of wavelengths that represent the midpoints/endpoints of the wavelength bins
         lam_midpts, lam_endpts = calculateWaveList(par, lam, method='lstsq')
-        # TODO, rename all instances of 'Nspec' to 'num_wavelengths' for clarity. 
-        Nspec = len(lam_endpts)  # The number of unique wavelength bins
-        polyimage = np.zeros((Nspec - 1, ysize, xsize))
+        # TODO, rename all instances of 'num_wavelengths' to 'num_wavelengths' for clarity. 
+        num_wavelengths = len(lam_endpts)  # The number of unique wavelength bins
+        polyimage = np.zeros((num_wavelengths - 1, ysize, xsize))
 
         # Initialize some arrays where we will store information about the x/y position of each PSF, 
         # as well as whether or not that PSF is "good" (i.e. falls on the detector)
@@ -1370,8 +1395,8 @@ def buildcalibrations(
 
         log.info('Making polychrome cube')
         if not parallel:
-            for i in range(Nspec - 1):
-                log.info(f'  Wavelength bin {i + 1} of {Nspec - 1}')
+            for i in range(num_wavelengths - 1):
+                log.info(f'  Wavelength bin {i + 1} of {num_wavelengths - 1}')
                 polyimage[i] = (lam_endpts[i + 1] - lam_endpts[i]) * make_polychrome(lam_endpts[i],
                                                                                      lam_endpts[i + 1],
                                                                                      hires_arrs,
@@ -1405,7 +1430,7 @@ def buildcalibrations(
             for w in consumers:
                 w.start()
 
-            for i in range(Nspec - 1):
+            for i in range(num_wavelengths - 1):
                 tasks.put(Task(i,
                                make_polychrome,
                                (lam_endpts[i],
@@ -1424,7 +1449,7 @@ def buildcalibrations(
 
             for i in range(ncpus):
                 tasks.put(None)
-            for i in range(Nspec - 1):
+            for i in range(num_wavelengths - 1):
                 index, poly = results.get()
                 polyimage[index] = poly * \
                     (lam_endpts[index + 1] - lam_endpts[index])
@@ -1480,11 +1505,11 @@ def buildcalibrations(
             hires_arrs = [fits.open(filename)[0].data for filename in hires_list]
 
         lam_midpts, lam_endpts = calculateWaveList(par, lam, method='lstsq')
-        Nspec = len(lam_endpts)
-        hirespoly = np.zeros((Nspec - 1, ysize * upsample, xsize * upsample))
+        num_wavelengths = len(lam_endpts)
+        hirespoly = np.zeros((num_wavelengths - 1, ysize * upsample, xsize * upsample))
 
         if not parallel:
-            for i in range(Nspec - 1):
+            for i in range(num_wavelengths - 1):
                 hirespoly[i] = (lam_endpts[i + 1] - lam_endpts[i]) * make_hires_polychrome(lam_endpts[i],
                                                                                            lam_endpts[i + 1],
                                                                                            hires_arrs,
@@ -1505,7 +1530,7 @@ def buildcalibrations(
             for w in consumers:
                 w.start()
 
-            for i in range(Nspec - 1):
+            for i in range(num_wavelengths - 1):
                 tasks.put(Task(i,
                                make_hires_polychrome,
                                (lam_endpts[i],
@@ -1522,7 +1547,7 @@ def buildcalibrations(
 
             for i in range(ncpus):
                 tasks.put(None)
-            for i in range(Nspec - 1):
+            for i in range(num_wavelengths - 1):
                 index, poly = results.get()
                 hirespoly[index] = poly * \
                     (lam_endpts[index + 1] - lam_endpts[index]) / upsample**2

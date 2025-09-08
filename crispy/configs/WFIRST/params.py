@@ -90,7 +90,7 @@ class Params(object):
 
         self.BW = 0.18              # Spectral bandwidth
         self.npixperdlam = 2.0       # Number of pixels per spectral resolution element
-        self.nchanperspec_lstsq = 2.0  # Nspec per pixel for least squares
+        self.nchanperspec_lstsq = 2.0  # num_wavelengths per pixel for least squares
         # Spectral resolving power (extracted cubes have twice)
         self.R = 50
 
@@ -170,6 +170,6 @@ class Params(object):
         self.hdr.append(
             ('RESLSTSQ',
              self.nchanperspec_lstsq,
-             'Nspec per Nyq. sample for lstsq extraction'),
+             'num_wavelengths per Nyq. sample for lstsq extraction'),
             end=True)
         self.hdr.append(('R', self.R, 'Spectral resolution'), end=True)

@@ -129,29 +129,30 @@ class PSFLets:
             coef = np.linalg.lstsq(log_wavelength_powers, allcoef[:, i])[0]
             self.interp_arr[:, i] = coef
 
-    def return_locations_short(self, coef, xindx, yindx):
-        '''
-        Returns the x,y detector location of a given lenslet for a given polynomial fit
+    # COMMENTED OUT: Function commented out to avoid confusion until we understand its purpose
+    # def return_locations_short(self, coef, xindx, yindx):
+    #     '''
+    #     Returns the x,y detector location of a given lenslet for a given polynomial fit
 
-        Parameters
-        ----------
-        coef: lists floats
-            Polynomial coefficients of fit for a single wavelength
-        xindx: int
-            X index of lenslet in lenslet array
-        yindx: int
-            Y index of lenslet in lenslet array
+    #     Parameters
+    #     ----------
+    #     coef: lists floats
+    #         Polynomial coefficients of fit for a single wavelength
+    #     xindx: int
+    #         X index of lenslet in lenslet array
+    #     yindx: int
+    #         Y index of lenslet in lenslet array
 
-        Returns
-        -------
-        interp_x: float
-            X coordinate on the detector
-        interp_y: float
-            Y coordinate on the detector
-        '''
-        # TODO, where does this 'coeforder' come from? Does this parent function actually get called from anywhere? Because clearly it's going to throw an error if it does.
-        interp_x, interp_y = transform(xindx, yindx, coeforder, coef) 
-        return interp_x, interp_y
+    #     Returns
+    #     -------
+    #     interp_x: float
+    #         X coordinate on the detector
+    #     interp_y: float
+    #         Y coordinate on the detector
+    #     '''
+    #     # TODO, where does this 'coeforder' come from? Does this parent function actually get called from anywhere? Because clearly it's going to throw an error if it does.
+    #     interp_x, interp_y = transform(xindx, yindx, coeforder, coef) 
+    #     return interp_x, interp_y
 
     def return_res(self, lam, allcoef, xindx, yindx,
                    order=3, lam1=None, lam2=None):
@@ -782,28 +783,29 @@ def corrval(coef, x, y, input_image, order, trimfrac=0.1, show_plots=False):
     return score
 
 
-def corrvalsum(coef, x, y, filtered, order, trimfrac=0.1, gsize=2):
-    # TODO, is this function used anywhere in this repo? If not, comment it out. 
-    # TODO, add doscring
-    _x, _y = transform(x, y, order, coef)
-    ydim, xdim = filtered.shape
-    s = 0.0
-    ry = np.reshape(_y, -1)
-    rx = np.reshape(_x, -1)
-    for i in range(len(ry)):
-        yi = ry[i]
-        xi = rx[i]
-        xmin = int(xi) - gsize
-        xmax = xmin + 2 * gsize
-        ymin = int(yi) - gsize
-        ymax = ymin + 2 * gsize
-        if ymin > 2 * gsize and xmin > 2 * gsize and xmax < xdim - 2 * gsize and ymax < ydim - 2 * gsize:
-            # dx = xi - int(xi)
-            # dy = yi - int(yi)
-            # s+=np.sum(simplepsf(size=2*gsize,fwhm=fwhm,offx=dx,offy=dy)*filtered[ymin:ymax,xmin:xmax])
-            # s+=np.sum(gausspsf(size=2*gsize,fwhm=fwhm,offx=dx,offy=dy)*filtered[ymin:ymax,xmin:xmax])
-            s += np.sum(filtered[ymin:ymax, xmin:xmax])
-    return -s
+# COMMENTED OUT: Function unused in repository, commented out as requested
+# def corrvalsum(coef, x, y, filtered, order, trimfrac=0.1, gsize=2):
+#     # TODO, is this function used anywhere in this repo? If not, comment it out. 
+#     # TODO, add doscring
+#     _x, _y = transform(x, y, order, coef)
+#     ydim, xdim = filtered.shape
+#     s = 0.0
+#     ry = np.reshape(_y, -1)
+#     rx = np.reshape(_x, -1)
+#     for i in range(len(ry)):
+#         yi = ry[i]
+#         xi = rx[i]
+#         xmin = int(xi) - gsize
+#         xmax = xmin + 2 * gsize
+#         ymin = int(yi) - gsize
+#         ymax = ymin + 2 * gsize
+#         if ymin > 2 * gsize and xmin > 2 * gsize and xmax < xdim - 2 * gsize and ymax < ydim - 2 * gsize:
+#             # dx = xi - int(xi)
+#             # dy = yi - int(yi)
+#             # s+=np.sum(simplepsf(size=2*gsize,fwhm=fwhm,offx=dx,offy=dy)*filtered[ymin:ymax,xmin:xmax])
+#             # s+=np.sum(gausspsf(size=2*gsize,fwhm=fwhm,offx=dx,offy=dy)*filtered[ymin:ymax,xmin:xmax])
+#             s += np.sum(filtered[ymin:ymax, xmin:xmax])
+#     return -s
 
 
 def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
@@ -831,7 +833,16 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         fraction of lenslet outliers (high & low
         combined) to trim in the minimization.  Default 0.1
         (5% trimmed on the high end, 5% on the low end)
-    # TODO, add argument definitions for the other arugments not listed here. 
+    mask: ndarray
+        Mask array for the image
+    phi: float
+        Rotation angle for the PSFlet grid. Default np.arctan2(1.926, -1)
+    scale: float
+        Scale factor for the PSFlet grid. Default 15.02
+    nlens: int
+        Number of lenslets. Default 108
+    finesearch: int
+        Fine search parameter. Default 3 
 
     Returns
     -------
