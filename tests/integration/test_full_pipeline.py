@@ -22,7 +22,7 @@ class TestBasicWorkflow:
         
         # Step 1: Calculate wavelength list
         try:
-            lam_midpts, lam_endpts = calculateWaveList(wfirst_params, Nspec=5, method='optext')
+            lam_midpts, lam_endpts = calculateWaveList(wfirst_params, num_wavelengths=5, method='optext')
             assert len(lam_midpts) > 0
             assert len(lam_endpts) > 0
         except Exception as e:
@@ -122,7 +122,7 @@ class TestEndToEndScenarios:
                 pixsize=0.1,
                 npix=32,
                 pixval=1.0,
-                Nspec=3,
+                num_wavelengths=3,
                 outname='integration_test_flat.fits'
             )
         except Exception as e:

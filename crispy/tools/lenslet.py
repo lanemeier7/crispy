@@ -72,7 +72,7 @@ def propagateLenslets(
         imageplane,
         lam1,
         lam2,
-        hires_arrs=None,
+        high_res_arrays=None,
         lam_arr=None,
         upsample=3,
         nlam=10,
@@ -83,7 +83,7 @@ def propagateLenslets(
     Function propagateLenslets
 
     This is the main propagation function. It puts the PSFLets where they belong on the detector.
-    It uses template PSFLets given in hires_arrs, and can use also a pre-determined wavelength
+    It uses template PSFLets given in high_res_arrays, and can use also a pre-determined wavelength
     solution through the allcoef argument.
 
     Parameters
@@ -142,21 +142,21 @@ def propagateLenslets(
         # to do this later, saving a factor of a few in time.
         ################################################################
 
-        if (hires_arrs is None) or (lam_arr is None):
+        if (high_res_arrays is None) or (lam_arr is None):
             log.error('No template PSFLets given!')
             return
         else:
-            hires = np.zeros((hires_arrs[0].shape))
+            hires = np.zeros((high_res_arrays[0].shape))
             if lam <= np.amin(lam_arr):
-                hires[:] = hires_arrs[0]
+                hires[:] = high_res_arrays[0]
             elif lam >= np.amax(lam_arr):
-                hires[:] = hires_arrs[-1]
+                hires[:] = high_res_arrays[-1]
             else:
                 i1 = np.amax(np.arange(len(lam_arr))[np.where(lam > lam_arr)])
                 i2 = i1 + 1
-                hires = hires_arrs[i1] * \
+                hires = high_res_arrays[i1] * \
                     (lam - lam_arr[i1]) / (lam_arr[i2] - lam_arr[i1])
-                hires += hires_arrs[i2] * \
+                hires += high_res_arrays[i2] * \
                     (lam_arr[i2] - lam) / (lam_arr[i2] - lam_arr[i1])
 
             for i in range(hires.shape[0]):
@@ -244,23 +244,23 @@ def propagateLenslets(
                 x_hires = xcen[i] * 1. / image.shape[1]
                 y_hires = ycen[i] * 1. / image.shape[0]
 
-                x_hires = x_hires * hires_arrs[0].shape[1] - 0.5
-                y_hires = y_hires * hires_arrs[0].shape[0] - 0.5
+                x_hires = x_hires * high_res_arrays[0].shape[1] - 0.5
+                y_hires = y_hires * high_res_arrays[0].shape[0] - 0.5
 
                 totweight = 0
 
                 if x_hires <= 0:
                     i1 = i2 = 0
-                elif x_hires >= hires_arrs[0].shape[1] - 1:
-                    i1 = i2 = hires_arrs[0].shape[1] - 1
+                elif x_hires >= high_res_arrays[0].shape[1] - 1:
+                    i1 = i2 = high_res_arrays[0].shape[1] - 1
                 else:
                     i1 = int(x_hires)
                     i2 = i1 + 1
 
                 if y_hires < 0:
                     j1 = j2 = 0
-                elif y_hires >= hires_arrs[0].shape[0] - 1:
-                    j1 = j2 = hires_arrs[0].shape[0] - 1
+                elif y_hires >= high_res_arrays[0].shape[0] - 1:
+                    j1 = j2 = high_res_arrays[0].shape[0] - 1
                 else:
                     j1 = int(y_hires)
                     j2 = j1 + 1

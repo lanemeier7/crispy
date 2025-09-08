@@ -113,14 +113,14 @@ def test_working_units(par):
         # Test 1: testCreateFlatfield (smaller parameters)
         success, result = run_test_safely(
             testCreateFlatfield, "testCreateFlatfield (small)", par,
-            pixsize=0.1, npix=32, pixval=1.0, Nspec=5
+            pixsize=0.1, npix=32, pixval=1.0, num_wavelengths=5
         )
         results["testCreateFlatfield"] = success
         
         # Test 2: testCrosstalk (smaller parameters)
         success, result = run_test_safely(
             testCrosstalk, "testCrosstalk (small)", par,
-            pixsize=0.1, npix=32, pixval=1.0, Nspec=5
+            pixsize=0.1, npix=32, pixval=1.0, num_wavelengths=5
         )
         results["testCrosstalk"] = success
         

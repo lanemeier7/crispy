@@ -112,7 +112,7 @@ def testOptExt(par,im, lensX, lensY, smoothandmask=True, delt_y=5):
 
 
     PSFlet_tool = PSFLets(load=True, infiledir=par.wavecalDir)
-    #Nspec = int(par.BW*par.npixperdlam*par.R)
+    #num_wavelengths = int(par.BW*par.npixperdlam*par.R)
     lamlist,scratch = calculateWaveList(par,method='optext')
 
     xindx = PSFlet_tool.xindx
@@ -191,7 +191,7 @@ def testGenPixSol(par):
 def testCreateFlatfield(par,pixsize = 0.1,
                         npix = 512, 
                         pixval = 1.,
-                        Nspec=45,
+                        num_wavelengths=45,
                         outname='flatfield.fits',
                         useQE=True,
                         method='optext',
@@ -212,7 +212,7 @@ def testCreateFlatfield(par,pixsize = 0.1,
         Each input frame has a pixel size npix x npix
     pixval: float
         Each input frame has a unform value pixval in photons per second per nm of bandwidth
-    Nspec: float
+    num_wavelengths: float
         Optional input forcing the number of wavelengths bins used
     outname: string
         Name of flatfield image
@@ -221,7 +221,7 @@ def testCreateFlatfield(par,pixsize = 0.1,
     
     '''
     # Calculate the wavelengths of the flatfield cube and create the flatfield cube
-    lam_midpts,lam_endpts = calculateWaveList(par,Nspec=Nspec,method=method)
+    lam_midpts,lam_endpts = calculateWaveList(par,num_wavelengths=num_wavelengths,method=method)
     inputCube = np.ones((len(lam_midpts),npix,npix),dtype=np.float32)
     inputCube *= pixval
     
@@ -241,7 +241,7 @@ def testCreateFlatfield(par,pixsize = 0.1,
 
 import scipy
 from scipy.ndimage import gaussian_filter1d
-def testCrosstalk(par,pixsize = 0.1, npix = 512, pixval = 1.,Nspec=45,outname='crosstalk.fits',useQE=True,method='optext'):
+def testCrosstalk(par,pixsize = 0.1, npix = 512, pixval = 1.,num_wavelengths=45,outname='crosstalk.fits',useQE=True,method='optext'):
     '''
     Creates a polychromatic flatfield
     
@@ -255,7 +255,7 @@ def testCrosstalk(par,pixsize = 0.1, npix = 512, pixval = 1.,Nspec=45,outname='c
         Each input frame has a pixel size npix x npix
     pixval: float
         Each input frame has a unform value pixval in photons per second per nm of bandwidth
-    Nspec: float
+    num_wavelengths: float
         Optional input forcing the number of wavelengths bins used
     outname: string
         Name of flatfield image
@@ -264,7 +264,7 @@ def testCrosstalk(par,pixsize = 0.1, npix = 512, pixval = 1.,Nspec=45,outname='c
     
     '''
     
-    lam_midpts,lam_endpts = calculateWaveList(par,Nspec=Nspec,method=method)
+    lam_midpts,lam_endpts = calculateWaveList(par,num_wavelengths=num_wavelengths,method=method)
     inputCube = np.zeros((len(lam_midpts),npix,npix),dtype=np.float32)
     
     for i in range(len(lam_midpts)):
@@ -272,7 +272,7 @@ def testCrosstalk(par,pixsize = 0.1, npix = 512, pixval = 1.,Nspec=45,outname='c
     
 #     lam_midpts_nom,_ = calculateWaveList(par,method=method)
 
-#     FWHM=Nspec/len(lam_midpts_nom)
+#     FWHM=num_wavelengths/len(lam_midpts_nom)
 #     inputCube[:,npix//2,npix//2] = gaussian_filter1d(inputCube[:,npix//2,npix//2],sigma=FWHM/2.35)
             
     par.saveDetector=False

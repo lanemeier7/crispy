@@ -130,7 +130,7 @@ def testReduction(par, name, ifsimage):
     return cube
 
 
-def calculateWaveList(par, lam_list=None, Nspec=None, method='lstsq'):
+def calculateWaveList(par, lam_list=None, num_wavelengths=None, method='lstsq'):
     '''
     Computes the wavelength lists corresponding to the center and endpoints of each
     spectral bin. Wavelengths are separated by a constant value in log space. Number of
@@ -145,7 +145,7 @@ def calculateWaveList(par, lam_list=None, Nspec=None, method='lstsq'):
             calibration. Otherwise, we could decide to focus on a smaller/larger region of
             the spectrum to retrieve. The final processed cubes will have bins centered
             on lam_midpts
-    Nspec: int
+    num_wavelengths: int
             If specified, forces the number of bins in the final cube (uses np.linspace)
 
     Returns
@@ -160,9 +160,9 @@ def calculateWaveList(par, lam_list=None, Nspec=None, method='lstsq'):
         lamlist = np.loadtxt(par.wavecalDir + "lamsol.dat")[:, 0]
     else:
         lamlist = lam_list
-    if Nspec is None:
+    if num_wavelengths is None:
         if method == 'lstsq':
-            Nspec = int(
+            num_wavelengths = int(
                 np.log(
                     max(lamlist) /
                     min(lamlist)) *
@@ -170,20 +170,20 @@ def calculateWaveList(par, lam_list=None, Nspec=None, method='lstsq'):
                 par.nchanperspec_lstsq +
                 1)
         else:
-            Nspec = int(
+            num_wavelengths = int(
                 np.log(
                     max(lamlist) /
                     min(lamlist)) *
                 par.R *
                 par.npixperdlam +
                 1)
-    log.info('Reduced cube will have %d wavelength bins' % (Nspec - 1))
-#     lam_endpts = np.linspace(min(lamlist), max(lamlist), Nspec)
+    log.info('Reduced cube will have %d wavelength bins' % (num_wavelengths - 1))
+#     lam_endpts = np.linspace(min(lamlist), max(lamlist), num_wavelengths)
 #     lam_midpts = (lam_endpts[1:]+lam_endpts[:-1])/2.
     loglam_endpts = np.linspace(
         np.log(
             min(lamlist)), np.log(
-            max(lamlist)), Nspec)
+            max(lamlist)), num_wavelengths)
     loglam_midpts = (loglam_endpts[1:] + loglam_endpts[:-1]) / 2
     lam_endpts = np.exp(loglam_endpts)
     lam_midpts = np.exp(loglam_midpts)
@@ -237,7 +237,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     yindx = polychromekey[2].data
     good = polychromekey[3].data
     
-    lam_midpts, lam_endpts = calculateWaveList(par, method='lstsq', Nspec=psflets.shape[0]+1)
+    lam_midpts, lam_endpts = calculateWaveList(par, method='lstsq', num_wavelengths=psflets.shape[0]+1)
 
     if fitbkgnd:
         n_add = 1
@@ -913,7 +913,7 @@ def intOptimalExtract(par, name, IFSimage, smoothandmask=True, sum=False):
     """
 
     loc = PSFLets(load=True, infiledir=par.wavecalDir)
-    #Nspec = int(par.BW*par.npixperdlam*par.R)
+    #num_wavelengths = int(par.BW*par.npixperdlam*par.R)
     lam_midpts, scratch = calculateWaveList(par, method='optext')
 
     datacube = fitspec_intpix_np(

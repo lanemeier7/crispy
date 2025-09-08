@@ -47,7 +47,7 @@ class TestFlatfieldCreation:
             pixsize=0.1,
             npix=32,
             pixval=1.0,
-            Nspec=5,
+            num_wavelengths=5,
             outname='test_flatfield_small.fits'
         )
         
@@ -67,7 +67,7 @@ class TestFlatfieldCreation:
             pixsize=0.1,
             npix=64,
             pixval=1.0,
-            Nspec=10,
+            num_wavelengths=10,
             outname='test_flatfield_medium.fits'
         )
         
@@ -89,7 +89,7 @@ class TestCrosstalkAnalysis:
             pixsize=0.1,
             npix=32,
             pixval=1.0,
-            Nspec=5,
+            num_wavelengths=5,
             outname='test_crosstalk_small.fits'
         )
         
@@ -107,7 +107,7 @@ class TestCrosstalkAnalysis:
             pixsize=0.1,
             npix=64,
             pixval=1.0,
-            Nspec=10,
+            num_wavelengths=10,
             outname='test_crosstalk_medium.fits'
         )
         
