@@ -1559,3 +1559,171 @@ def buildcalibrations(
         out.writeto(f"{outdir}hiresPolychromeR{par.R}stack.fits", overwrite=True)
 
     log.info(f"Total time elapsed: {time.time() - tstart:.0f} s")
+    
+    
+def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavelength):
+    """
+    Compute the derivative of coefficients with respect to wavelength at a specific wavelength.
+
+    Parameters:
+    -----------
+    x_lens_ind : array
+        x indices of lenslets
+    y_lens_ind : array
+        y indices of lenslets
+    lamsol_df : pandas.DataFrame
+        Contents of the lamsol data file. Stored as a DataFrame where the index is wavelength and columns contain coefficients
+    wavelength : float
+        The specific wavelength at which to evaluate the derivative
+
+    Returns:
+    --------
+    coefficient_derivatives : list
+        Derivatives of each coefficient at the specified wavelength
+    """
+    # Intelligently guess the order of the polynomial fit from the number of coefficients 
+    # Remember that the 0th column is not a coefficient, but a wavelength.
+    num_coeffs = len(lamsol_df.columns) - 1
+    for order in range(10):
+        if (order + 1) * (order + 2) == num_coeffs:
+            break 
+    
+    # Check if the wavelength was explicitly measured, use central difference formula
+    if wavelength in lamsol_df[0]:
+        # Find the index that corresponds to this wavelength
+        idx = lamsol_df[0].searchsorted(wavelength)
+
+        # Handle edge cases
+        if idx == 0:
+            # Forward difference for first point
+            wavelength_next = lamsol_df.loc[idx + 1, 0]
+            derivative = (lamsol_df.loc[idx + 1] - lamsol_df.loc[idx]) / (wavelength_next - wavelength)
+        elif idx == len(lamsol_df.index) - 1:
+            # Backward difference for last point
+            wavelength_prev = lamsol_df.loc[idx - 1, 0]
+            derivative = (lamsol_df.loc[idx] - lamsol_df.loc[idx - 1]) / (wavelength - wavelength_prev)
+        else:
+            # Central difference for interior points
+            wavelength_next = lamsol_df.loc[idx + 1, 0]
+            wavelength_prev = lamsol_df.loc[idx - 1, 0]
+            derivative = (lamsol_df.loc[idx + 1] - lamsol_df.loc[idx - 1]) / (wavelength_next - wavelength_prev)
+    else:
+        # For wavelengths that weren't explicitly measured, find the index where this wavelength would 
+        # be inserted to maintain order and interpolate between surrounding points
+        idx = lamsol_df[0].searchsorted(wavelength)
+        if idx == 0:
+            # Forward difference if wavelength is before the first index
+            wavelength1, wavelength2 = lamsol_df.loc[0, 0], lamsol_df.loc[1, 0]
+            c1, c2 = lamsol_df.iloc[0], lamsol_df.iloc[1]
+            derivative = (c2 - c1) / (wavelength2 - wavelength1)
+        elif idx >= len(lamsol_df.index):
+            # Backward difference if wavelength is after the last index
+            wavelength1, wavelength2 = lamsol_df.loc[len(lamsol_df.index) - 2, 0], lamsol_df.loc[len(lamsol_df.index) - 1, 0]
+            c1, c2 = lamsol_df.loc[len(lamsol_df.index) - 2], lamsol_df.loc[len(lamsol_df.index) - 1]
+            derivative = (c2 - c1) / (wavelength2 - wavelength1)
+        else:
+            # Linear interpolation between surrounding points
+            wavelength1, wavelength2 = lamsol_df.loc[idx - 1, 0], lamsol_df.loc[idx, 0]
+            c1, c2 = lamsol_df.loc[idx - 1], lamsol_df.loc[idx]
+            derivative = (c2 - c1) / (wavelength2 - wavelength1)
+
+    coefficient_derivatives = list(derivative[1:]) # Skip the first column since it's wavelength, not a coefficient
+
+    # Create some blank arrays that we will fill in with dx/dlambda and dy/dlambda values
+    dx_dlambda = np.zeros(np.asarray(x_lens_ind).shape)
+    dy_dlambda = np.zeros(np.asarray(y_lens_ind).shape)
+
+    # Calculate dx/dlambda and dy/dlambda using the standard method
+    i = 0
+    for ix in range(order + 1):
+        for iy in range(order - ix + 1):
+            dx_dlambda += coefficient_derivatives[i] * x_lens_ind**ix * y_lens_ind**iy
+            i += 1
+    for ix in range(order + 1):
+        for iy in range(order - ix + 1):
+            dy_dlambda += coefficient_derivatives[i] * x_lens_ind**ix * y_lens_ind**iy
+            i += 1
+    
+    return dx_dlambda, dy_dlambda
+
+
+# Display a plot of dispersion values at a few different wavelengths
+def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_directory=None):
+    """
+    Generate plots illustrating the dispersion at specified wavelengths, 
+    as well as a plot of dispersion vs. wavelength for a lenslet in the middle of the array.
+
+    Parameters:
+    -----------
+    wavelengths_to_plot : float or list
+        Wavelengths at which to display a dispersion map
+    nlens : int
+        Number of lenslets along one dimension of the array
+    lamsol_filepath : str
+        Filepath to the lamsol.dat file
+    output_directory : str, optional
+        Directory path where plots should be saved. If None, plots are not saved.
+
+    Returns:
+    --------
+    None
+    """
+    # Read in the lamsol data file
+    lamsol_df = pd.read_csv(lamsol_filepath, delimiter=' ', engine='python', header=None)
+    
+    # Intelligently guess the order of the polynomial fit from the number of coefficients 
+    # Remember that the 0th column is not a coefficient, but a wavelength.
+    num_coeffs = lamsol_df.shape[1]-1
+    for order in range(10):
+        if (order + 1) * (order + 2) == num_coeffs:
+            break        
+        
+    # Generate some arrays that represent the x/y indices of the lenslets
+    # Also, create a mask of lenslets that fall on the detector
+    x_lens_ind = np.arange(-nlens // 2, nlens // 2)
+    x_lens_ind, y_lens_ind = np.meshgrid(x_lens_ind, x_lens_ind)
+
+    # Display a dispersion map at each wavelength of interest
+    for wavelength in wavelengths_to_plot:
+        # Determine the x/y coordinates of the lenslets on the detector, at the wavelength closest to the desired wavelength
+        _coefficients_for_transformation = lamsol_df.loc[(lamsol_df[0] - wavelength).abs().idxmin()].values[1:]
+        x_transformed, y_transformed = transform(x_lens_ind, y_lens_ind, order=order, coef=_coefficients_for_transformation)
+        mask = (x_transformed >= 0) & (x_transformed < 1024) & \
+            (y_transformed >= 0) & (y_transformed < 1024)
+        
+        dx_dlambda, dy_dlambda = derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavelength)
+        dispersion_nm_per_pix = 1 / np.sqrt(dx_dlambda**2 + dy_dlambda**2)
+        
+        fig, ax = plt.subplots(figsize=(6, 5))
+        scatter = ax.scatter(x_transformed[mask], y_transformed[mask], c=dispersion_nm_per_pix[mask], s=20)
+        cbar = fig.colorbar(scatter, ax=ax)
+        cbar.set_label('Dispersion (nm/pixel)')
+        ax.set_xlim(0, 1024)
+        ax.set_ylim(0, 1024)
+        ax.set_aspect('equal')
+        ax.set_xlabel('Detector X (pixels)')
+        ax.set_ylabel('Detector Y (pixels)')
+        ax.set_title(f'Dispersion at {wavelength} nm')
+        fig.tight_layout()
+
+        if output_directory is not None:
+            import os
+            if not os.path.exists(output_directory):
+                os.makedirs(output_directory)
+            filename = os.path.join(output_directory, f'dispersion_map_{wavelength}nm.png')
+            fig.savefig(filename, dpi=300, bbox_inches='tight')
+            
+    # Display a plot of dispersion vs. wavelength for a lenslet in the middle of the array
+    dispersion_array = []
+    lenslet_idx = nlens // 2
+    for wavelength in lamsol_df[0]:
+        dx_dlambda, dy_dlambda = derivative_of_lamsol_at_wavelength(lenslet_idx, lenslet_idx, lamsol_df, wavelength)
+        dispersion_nm_per_pix = 1 / np.sqrt(dx_dlambda**2 + dy_dlambda**2)
+        dispersion_array.append(dispersion_nm_per_pix)
+    fig, ax = plt.subplots(figsize=(5, 4))
+    ax.plot(lamsol_df[0], dispersion_array)
+    ax.set_xlabel('Wavelength (nm)')
+    ax.set_ylabel('Dispersion (nm/pixel)')
+    ax.set_title(f'Dispersion vs. Wavelength at Lenslet ({lenslet_idx}, {lenslet_idx})')
+    ax.grid()
+    fig.tight_layout()

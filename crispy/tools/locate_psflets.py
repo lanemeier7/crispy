@@ -554,8 +554,31 @@ def transform(x, y, order, coef):
     order: int
         Order of the polynomial fit
     coef:  list of floats
-        List of the coefficients.  Must match the length required by
-        order = (order+1)*(order+2)
+        List of the coefficients.  Must match the length required by order = (order+1)*(order+2).  
+        For example, coefficient terms are arranged as follows for the case when order=3:
+        [element of coef array]: [term in polynomial]
+        (Terms for _x)
+        0: x^0 * y^0
+        1: x^0 * y^1
+        2: x^0 * y^2
+        3: x^0 * y^3
+        4: x^1 * y^0
+        5: x^1 * y^1
+        6: x^1 * y^2
+        7: x^2 * y^0
+        8: x^2 * y^1
+        9: x^3 * y^0
+        (Terms for _y)
+        10: x^0 * y^0
+        11: x^0 * y^1
+        12: x^0 * y^2
+        13: x^0 * y^3
+        14: x^1 * y^0
+        15: x^1 * y^1
+        16: x^1 * y^2
+        17: x^2 * y^0
+        18: x^2 * y^1
+        19: x^3 * y^0
 
     Returns
     -------
