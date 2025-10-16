@@ -24,8 +24,8 @@ class Params(object):
         # self.wavecalDir = self.prefix + '/wavecalR50_770/'
         self.wavecalDir = self.prefix + '/testing/'
 #         self.wavecalName = 'simCalCube.fits'
-        self.filelist = []
-        self.lamlist = []
+        self.filelist = None
+        self.lamlist = None
 
         ######################################################################
         # Basic resolution/configuration parameters
