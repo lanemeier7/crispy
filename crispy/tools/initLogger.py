@@ -254,11 +254,16 @@ def setUpLogger(name='generalLoggerName', lvl=20, addFH=True, addSH=True):
     log = logging.getLogger(name)
     log_dict[name] = log
     log.setLevel(1)
-    # add the requested handlers to the log
-    if addFH:
+    
+    # Check if handlers already exist to avoid duplicates
+    has_file_handler = any(isinstance(h, logging.FileHandler) for h in log.handlers)
+    has_stream_handler = any(isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler) for h in log.handlers)
+    
+    # add the requested handlers to the log only if they don't already exist
+    if addFH and not has_file_handler:
         addFileHandler(log, lvl=1)
     # make a stream handler
-    if addSH:
+    if addSH and not has_stream_handler:
         addStreamHandler(log, lvl)
     return log
 

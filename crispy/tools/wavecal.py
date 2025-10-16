@@ -81,8 +81,7 @@ def do_inspection(par, image, xpos, ypos, lam, display_plot=False):
         plt.show(block=False)
     else:
         plt.ion()
-    plt.close(fig) # Ensure that the plot gets closed, no matter what. Since display_plot doesn't seem to work on all machines. 
-
+    plt.close(fig)  # Ensure that the plot gets closed, no matter what. Since display_plot doesn't seem to work on all machines. 
 
 
 def make_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
@@ -412,13 +411,13 @@ def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, normalize=True):
         Number of pixels in the base PSF. Default is 13
     normalize : bool, optional
         Whether to normalizealize the PSFlet. Default is True
-        
+
     Returns
     -------
     hires_arr : ndarray
         4D array of shape (nsubarr, nsubarr, array_size, array_size) containing
         the high resolution PSFlets
-        
+
     Notes
     -----
     # TODO rename all instances of 'normalize' to 'normalize'
@@ -801,14 +800,9 @@ def makeHires(
                     for jj in range(di):
                         outim[ii * dj:(ii + 1) * dj, jj *
                               dj:(jj + 1) * dj] = high_res_array[ii, jj]
-                out = fits.HDUList(
-                    fits.PrimaryHDU(
-                        high_res_array.astype(
-                            np.float32)))
+                out = fits.HDUList(fits.PrimaryHDU(high_res_array.astype(np.float32)))
                 out.writeto(
-                    os.path.join(par.wavecalDir,
-                    'hires_psflets_lam%d.fits' %
-                    (lam[index])),
+                    os.path.join(par.wavecalDir, 'hires_psflets_lam%d.fits' % (lam[index])),
                     overwrite=True)
     else:
         log.info('No parallel computation')
@@ -836,7 +830,7 @@ def makeHires(
             # Validate savehiresimages parameter - should be boolean
             if not isinstance(savehiresimages, bool):
                 raise ValueError(f"savehiresimages must be boolean (True/False), got {type(savehiresimages).__name__}: {savehiresimages}")
-            
+
             if savehiresimages:
                 # Apparently deprecated code that didn't get used? Commenting it out for now. 
                 # di, dj = high_res_array.shape[0], high_res_array.shape[2]
@@ -890,7 +884,7 @@ def fit_monochromatic_cube(cube,
 
 
 def monochromatic_update(par, inImage, inLam, order=3, apodize=False):
-    #TODO, add docstring. inImage is an Image object that contains the monochromatic image
+    # TODO, add docstring. inImage is an Image object that contains the monochromatic image
     log.info(f"Making copies of wavelength solution from {os.path.join(par.wavecalDir, 'lamsol.dat')}")
     copy2(os.path.join(par.wavecalDir, "lamsol.dat"), os.path.join(par.wavecalDir, "lamsol_old.dat"))
     lamsol = np.loadtxt(os.path.join(par.wavecalDir, "lamsol.dat"))
@@ -918,7 +912,7 @@ def monochromatic_update(par, inImage, inLam, order=3, apodize=False):
 
     indx = np.asarray([0, 1, 4, 10, 11, 14])
     psftool.interp_arr[0][indx] += dcoef[indx]
-    psftool.genpixsol(par, lam, allcoef, order=order, lam1=min(lam)/1.01, lam2=max(lam)*1.01)
+    psftool.genpixsol(par, lam, allcoef, order=order, lam1=min(lam) / 1.01, lam2=max(lam) * 1.01)
     psftool.savepixsol(outdir=par.wavecalDir)
 
     #################################################################
@@ -1223,9 +1217,9 @@ def buildcalibrations(
                         do_inspection(par, im.data, x, y, lamlist[i])
 
     if genwavelengthsol:
-        log.info(f"Saving wavelength solution to {outdir}lamsol.dat")        
+        log.info(f"Saving wavelength solution to {os.path.join(outdir, 'lamsol.dat')}")
         allcoef = np.asarray(allcoef)
-        np.savetxt(f'{outdir}lamsol.dat', allcoef)
+        np.savetxt(f'{os.path.join(outdir, "lamsol.dat")}', allcoef)
         lam = allcoef[:, 0]  # Unnecessary duplicate of 'lamlist' from earlier?
         allcoef = allcoef[:, 1:]  # Strip away the first element (the wavelength) from each row of the master coefficient table 
 
@@ -1469,9 +1463,9 @@ def buildcalibrations(
         log.info('Saving polychrome cube')
         polyimage[polyimage < threshold] = 0.0
         out = fits.HDUList(fits.PrimaryHDU(polyimage.astype(np.float32)))
-        out.writeto(f"{outdir}polychromeR{par.R}.fits.gz", overwrite=True)
+        out.writeto(f"{os.path.join(outdir, 'polychromeR{par.R}.fits.gz')}", overwrite=True)
         out = fits.HDUList(fits.PrimaryHDU(np.sum(polyimage, axis=0).astype(np.float32)))
-        out.writeto(f"{outdir}polychromeR{par.R}stack.fits.gz", overwrite=True)
+        out.writeto(f"{os.path.join(outdir, 'polychromeR{par.R}stack.fits.gz')}", overwrite=True)
 
     else:
         lam_midpts, lam_endpts = calculateWaveList(par, lam, method='lstsq')
@@ -1560,8 +1554,8 @@ def buildcalibrations(
         out.writeto(f"{outdir}hiresPolychromeR{par.R}stack.fits", overwrite=True)
 
     log.info(f"Total time elapsed: {time.time() - tstart:.0f} s")
-    
-    
+
+
 def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavelength):
     """
     Compute the derivative of coefficients with respect to wavelength at a specific wavelength.
@@ -1588,7 +1582,7 @@ def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavele
     for order in range(10):
         if (order + 1) * (order + 2) == num_coeffs:
             break 
-    
+
     # Check if the wavelength was explicitly measured, use central difference formula
     if wavelength in lamsol_df[0]:
         # Find the index that corresponds to this wavelength
@@ -1628,7 +1622,7 @@ def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavele
             c1, c2 = lamsol_df.loc[idx - 1], lamsol_df.loc[idx]
             derivative = (c2 - c1) / (wavelength2 - wavelength1)
 
-    coefficient_derivatives = list(derivative[1:]) # Skip the first column since it's wavelength, not a coefficient
+    coefficient_derivatives = list(derivative[1:])  # Skip the first column since it's wavelength, not a coefficient
 
     # Create some blank arrays that we will fill in with dx/dlambda and dy/dlambda values
     dx_dlambda = np.zeros(np.asarray(x_lens_ind).shape)
@@ -1644,7 +1638,7 @@ def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavele
         for iy in range(order - ix + 1):
             dy_dlambda += coefficient_derivatives[i] * x_lens_ind**ix * y_lens_ind**iy
             i += 1
-    
+
     return dx_dlambda, dy_dlambda
 
 
@@ -1671,14 +1665,14 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
     """
     # Read in the lamsol data file
     lamsol_df = pd.read_csv(lamsol_filepath, delimiter=' ', engine='python', header=None)
-    
+
     # Intelligently guess the order of the polynomial fit from the number of coefficients 
     # Remember that the 0th column is not a coefficient, but a wavelength.
-    num_coeffs = lamsol_df.shape[1]-1
+    num_coeffs = lamsol_df.shape[1] - 1
     for order in range(10):
         if (order + 1) * (order + 2) == num_coeffs:
             break        
-        
+
     # Generate some arrays that represent the x/y indices of the lenslets
     # Also, create a mask of lenslets that fall on the detector
     x_lens_ind = np.arange(-nlens // 2, nlens // 2)
@@ -1691,10 +1685,10 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         x_transformed, y_transformed = transform(x_lens_ind, y_lens_ind, order=order, coef=_coefficients_for_transformation)
         mask = (x_transformed >= 0) & (x_transformed < 1024) & \
             (y_transformed >= 0) & (y_transformed < 1024)
-        
+
         dx_dlambda, dy_dlambda = derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavelength)
         dispersion_nm_per_pix = 1 / np.sqrt(dx_dlambda**2 + dy_dlambda**2)
-        
+
         fig, ax = plt.subplots(figsize=(6, 5))
         scatter = ax.scatter(x_transformed[mask], y_transformed[mask], c=dispersion_nm_per_pix[mask], s=20)
         cbar = fig.colorbar(scatter, ax=ax)
@@ -1713,7 +1707,7 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
                 os.makedirs(output_directory)
             filename = os.path.join(output_directory, f'dispersion_map_{wavelength}nm.png')
             fig.savefig(filename, dpi=300, bbox_inches='tight')
-            
+
     # Display a plot of dispersion vs. wavelength for a lenslet in the middle of the array
     dispersion_array = []
     lenslet_idx = nlens // 2
