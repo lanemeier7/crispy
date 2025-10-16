@@ -1,5 +1,5 @@
 from astropy.io import fits
-
+import os
 import numpy as np
 from crispy.tools.initLogger import getLogger
 log = getLogger('crispy')
@@ -157,7 +157,7 @@ def calculateWaveList(par, lam_list=None, num_wavelengths=None, method='lstsq'):
     '''
     if lam_list is None:
         log.info(f'Reading in lam_list from {par.wavecalDir}lamsol.dat')
-        lamlist = np.loadtxt(par.wavecalDir + "lamsol.dat")[:, 0]
+        lamlist = np.loadtxt(os.path.join(par.wavecalDir, "lamsol.dat"))[:, 0]
     else:
         lamlist = lam_list
     if num_wavelengths is None:
@@ -236,8 +236,8 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     xindx = polychromekey[1].data
     yindx = polychromekey[2].data
     good = polychromekey[3].data
-    
-    lam_midpts, lam_endpts = calculateWaveList(par, method='lstsq', num_wavelengths=psflets.shape[0]+1)
+
+    lam_midpts, lam_endpts = calculateWaveList(par, method='lstsq', num_wavelengths=psflets.shape[0] + 1)
 
     if fitbkgnd:
         n_add = 1
@@ -250,7 +250,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         log.info('Adding an extra flat component to fit, N={:}'.format(psflets.shape[0]))
     else:
         n_add = 0
-        
+
     par.hdr.append(
         ('fitbkgnd',
          fitbkgnd,
@@ -268,10 +268,9 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     chisq = np.zeros((par.nlens, par.nlens))
 
     model = np.zeros(ifsimage.data.shape)
-    resid = ifsimage.data.copy()*gain
+    resid = ifsimage.data.copy() * gain
     ifsimage.data *= gain
 
-    
     ydim, xdim = ifsimage.data.shape
     for i in range(par.nlens):
         for j in range(par.nlens):
@@ -279,20 +278,20 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                 subim, psflet_subarr, [y0, y1, x0, x1] = get_cutout(
                     ifsimage, xindx[:, i, j], yindx[:, i, j], psflets, dy, normpsflets=normpsflets)
                 try:
-                    cube[:, j, i], ivarcube[:, j, i], modelij, chisq[j,i] = fit_cutout(
+                    cube[:, j, i], ivarcube[:, j, i], modelij, chisq[j, i] = fit_cutout(
                         subim.copy(), psflet_subarr.copy(), mode=mode,
                         niter=niter, pixnoise=pixnoise, fitbkgnd=fitbkgnd)
 #                     model[y0:y1,x0:x1] += modelij
 #                     resid[y0:y1,x0:x1] -= modelij
                 except Exception:
-                    log.error('Fitting error at lenslet {:}'.format((i,j)))
+                    log.error('Fitting error at lenslet {:}'.format((i, j)))
                     cube[:, j, i] = np.NaN
                     ivarcube[:, j, i] = 0.
-                    chisq[j,i] = np.NaN
+                    chisq[j, i] = np.NaN
             else:
                 cube[:, j, i] = np.NaN
                 ivarcube[:, j, i] = 0.
-                chisq[j,i] = np.NaN
+                chisq[j, i] = np.NaN
     for k in range(len(psflets)):
         ydim, xdim = ifsimage.data.shape
         _x = xindx[k]
@@ -303,7 +302,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         coefs_flat = np.reshape(cube[k].transpose(), -1)
         resid -= psflets[k] * coefs_flat[psflet_indx]
         model += psflets[k] * coefs_flat[psflet_indx]
-    
+
     model /= gain
     resid /= gain
 
@@ -323,8 +322,6 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
             coefs_flat = np.reshape(cube[i].transpose(), -1)
             hires_model += hires_polychromeR[i] * \
                 coefs_flat[psflet_indx] / upsample**2
-
-    
 
     if 'cubemode' not in par.hdr:
         par.hdr.append(
@@ -448,7 +445,8 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     out.append(fits.PrimaryHDU(cube.data, par.hdr))
     out.append(fits.PrimaryHDU(cube.ivar, par.hdr))
     out.append(fits.PrimaryHDU(None, ifsimage.extraheader))
-    if fitbkgnd: out.append(fits.PrimaryHDU(dc_offset, par.hdr))
+    if fitbkgnd:
+        out.append(fits.PrimaryHDU(dc_offset, par.hdr))
     out.writeto(name + '.fits', overwrite=True)
 
     Image(
@@ -613,7 +611,7 @@ def RL(img, psflets, niter=10, guess=None, eps=1e-10, prior=0.0):
     return val, np.array(res), np.array(loglike), count
 
 
-def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd = False):
+def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=False):
     """
     Fit a series of PSFlets to an image, recover the best-fit coefficients.
     This is currently little more than a wrapper for np.linalg.lstsq, but
@@ -643,7 +641,7 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd = F
     It will depend on the performance of the algorithms and whether/how we
     implement regularization.
     """
-          
+
     try:
         if not subim.shape == psflets[0].shape:
             raise ValueError("subim must be the same shape as each psflet.")
@@ -652,7 +650,7 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd = F
 
     subim_flat = np.reshape(subim, -1)
     N = psflets.shape[0]
-    
+
     # calculate the R matrix (line spread function)
     # we could have this as a library!
     # This bit of code deals with some issues that occurred when trying to fit
@@ -660,20 +658,20 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd = F
     # and the reconvolution is not clean. So while we try to figure out a solution,
     # this code just removes the uniform background from the matrix diagonalization step
     if fitbkgnd:
-        psflets_flat = np.reshape(psflets[:-1,:,:], (N-1, -1))
+        psflets_flat = np.reshape(psflets[:-1, :, :], (N - 1, -1))
         A = psflets_flat.T
         Cinv = np.dot(A.T, A)
         C = np.linalg.inv(Cinv)
         Q = sp.linalg.sqrtm(Cinv)
         s = np.sum(Q, axis=1)
-        tR = Q / s[np.newaxis,:]
-        R = np.zeros((tR.shape[0]+1,tR.shape[1]+1))
-        R[:tR.shape[0],:tR.shape[1]] = tR
-        R[-1,-1] = 1
+        tR = Q / s[np.newaxis, :]
+        R = np.zeros((tR.shape[0] + 1, tR.shape[1] + 1))
+        R[:tR.shape[0], :tR.shape[1]] = tR
+        R[-1, -1] = 1
         # revert back to normal psflets for least squares
         psflets_flat = np.reshape(psflets, (N, -1))
         A = psflets_flat.T
-    
+
     # no "constant" if not fitting the background
     else:
         psflets_flat = np.reshape(psflets, (N, -1))
@@ -682,8 +680,7 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd = F
         C = np.linalg.inv(Cinv)
         Q = sp.linalg.sqrtm(Cinv)
         s = np.sum(Q, axis=1)
-        R = Q / s[np.newaxis,:]
-
+        R = Q / s[np.newaxis, :]
 
     # Regular weighted least squares
     if mode == 'lstsq':
@@ -696,14 +693,14 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd = F
         right = np.dot(A.T, np.dot(Ninv, subim_flat))
         f = np.dot(C, right)
         coef = np.dot(R, f)
-        icov = 1./np.diag(np.dot(R,np.dot(C,R.T)))
+        icov = 1. / np.diag(np.dot(R, np.dot(C, R.T)))
         model = np.sum(psflets * coef[:, np.newaxis, np.newaxis], axis=0)
-        chi2 = np.sum((subim-model)**2 / (model+pixnoise)) / len(subim_flat)
-    
+        chi2 = np.sum((subim - model)**2 / (model + pixnoise)) / len(subim_flat)
+
     # Iterative least squares with reconvolution, which is the preferred method
     elif mode == 'lstsq_conv':
         guess = np.ones(N) * np.sum(subim_flat) / float(N)
-                    
+
         for i in range(niter):
             var = np.reshape(
                 np.sum(psflets * guess[:, np.newaxis, np.newaxis], axis=0) + pixnoise, -1)
@@ -720,14 +717,14 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd = F
         coef = guess
         icov = ivarlstsq
         model = np.sum(psflets * coef[:, np.newaxis, np.newaxis], axis=0)
-        chi2 = np.sum((subim-model)**2 / (model+pixnoise)) / np.prod(subim.shape)
-        
+        chi2 = np.sum((subim - model)**2 / (model + pixnoise)) / np.prod(subim.shape)
+
     # Kept here for heritage, this was Maxime playing with the Richardson-Lucy deconvolution
     elif mode == 'RL':
         coef = RL(subim, psflets=psflets, niter=niter, prior=pixnoise)[0]
         icov = 1.
         model = np.sum(psflets * coef[:, np.newaxis, np.newaxis], axis=0)
-        chi2 = np.sum((subim-model)**2 / model) / np.prod(subim.shape)
+        chi2 = np.sum((subim - model)**2 / model) / np.prod(subim.shape)
     elif mode == 'RL_conv':
         rl = RL(subim, psflets=psflets, niter=niter, prior=pixnoise)[0]
         var = np.reshape(
@@ -743,7 +740,7 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd = F
         ivarlstsq = s**2
         icov = ivarlstsq
         model = np.sum(psflets * coef[:, np.newaxis, np.newaxis], axis=0)
-        chi2 = np.sum((subim-model)**2 / model) / np.prod(subim.shape)
+        chi2 = np.sum((subim - model)**2 / model) / np.prod(subim.shape)
     else:
         raise ValueError(
             "mode " +
@@ -913,7 +910,7 @@ def intOptimalExtract(par, name, IFSimage, smoothandmask=True, sum=False):
     """
 
     loc = PSFLets(load=True, infiledir=par.wavecalDir)
-    #num_wavelengths = int(par.BW*par.npixperdlam*par.R)
+    # num_wavelengths = int(par.BW*par.npixperdlam*par.R)
     lam_midpts, scratch = calculateWaveList(par, method='optext')
 
     datacube = fitspec_intpix_np(
@@ -1118,7 +1115,6 @@ def fitspec_intpix_np(
     x = np.arange(img.shape[1])
     y = np.arange(img.shape[0])
     x, y = np.meshgrid(x, y)
-    
 
     ydim, xdim = img.shape
 
@@ -1128,12 +1124,12 @@ def fitspec_intpix_np(
     ivarcube = np.zeros((len(lamlist), par.nlens, par.nlens))
     xarr, yarr = np.meshgrid(np.arange(Nmax), np.arange(delt_y))
 
-    #loglam = np.log(lamlist)
+    # loglam = np.log(lamlist)
     lamsol = np.loadtxt(par.wavecalDir + "lamsol.dat")[:, 0]
     allcoef = np.loadtxt(par.wavecalDir + "lamsol.dat")[:, 1:]
     PSFlet_tool.geninterparray(lamsol, allcoef)
 
-    #polychromekey = fits.open(par.wavecalDir + 'polychromekeyR%d.fits' % (par.R))
+    # polychromekey = fits.open(par.wavecalDir + 'polychromekeyR%d.fits' % (par.R))
 #     lams = polychromekey[0].data
 #     xindx = polychromekey[1].data+0.5
 #     yindx = polychromekey[2].data+0.5
@@ -1148,20 +1144,20 @@ def fitspec_intpix_np(
                 _sig = sig[i, j, :PSFlet_tool.nlam[i, j]]
                 _lam = PSFlet_tool.lam_indx[i, j, :PSFlet_tool.nlam[i, j]]
                 iy = np.nanmean(_y)
-                if ~np.isnan(iy) and int(_x[-1])<img.shape[1]:
-                    
-                    i1 = int(iy - delt_y / 2.)+1
+                if ~np.isnan(iy) and int(_x[-1]) < img.shape[1]:
+
+                    i1 = int(iy - delt_y / 2.) + 1
 #                     print i,j,len(_lam),int(_x[-1]) + 1-int(_x[0])
-                    dy = _y[xarr[:,:len(_lam)]] - y[i1:i1 + delt_y,
+                    dy = _y[xarr[:, :len(_lam)]] - y[i1:i1 + delt_y,
                                                   int(_x[0]):int(_x[-1]) + 1]
-                        
+
                     lams, _ = np.meshgrid(_lam, np.arange(delt_y))
 
                     if sum:
                         weight = 1.
                     else:
                         weight = np.exp(-dy**2 / _sig**2)
-                        weight /= np.sum(weight,axis=0)[np.newaxis,:]
+                        weight /= np.sum(weight, axis=0)[np.newaxis, :]
                     data = img[i1:i1 + delt_y, int(_x[0]):int(_x[-1]) + 1]
 
                     if im.ivar is not None:
@@ -1295,7 +1291,7 @@ def fitspec_intpix_np(
             par.hdr.append(
                 ('SMOOTHED', True, 'Cube smoothed over bad lenslets'), end=True)
         cube = Image(data=cube * lenslet_mask, ivar=ivarcube)
-        #good = np.any(cube.data != 0, axis=0)
+        # good = np.any(cube.data != 0, axis=0)
         cube = _smoothandmask(cube, np.ones(good.shape))
     else:
         if 'SMOOTHED' not in par.hdr:
@@ -1350,7 +1346,7 @@ def fitspec_intpix_np_old(
 
             i1 = int(np.mean(_x) - delt_x / 2.)
             dx = _x[yarr[:len(_lam)]] - x[_y[0]:_y[-1] + 1, i1:i1 + delt_x]
-            #var = _var[yarr[:len(_lam)]] - x[_y[0]:_y[-1] + 1, i1:i1 + delt_x]
+            # var = _var[yarr[:len(_lam)]] - x[_y[0]:_y[-1] + 1, i1:i1 + delt_x]
             sig = 0.7
             weight = np.exp(-dx**2 / 2. / sig**2)
             data = im.data[_y[0]:_y[-1] + 1, i1:i1 + delt_x]
