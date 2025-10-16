@@ -18,11 +18,11 @@ class Params(object):
         self.saveDetector = True
         self.savePoly = True  # save polychromatic cubes
         self.codeRoot = codeRoot
-        self.prefix = self.codeRoot + '/ReferenceFiles'
-        self.exportDir = self.codeRoot + '/SimResults'
-        self.unitTestsOutputs = self.codeRoot + '/unitTestsOutputs'
-        # self.wavecalDir = self.prefix + '/wavecalR50_770/'
-        self.wavecalDir = self.prefix + '/testing/'
+        self.prefix = os.path.join(self.codeRoot, 'ReferenceFiles')
+        self.exportDir = os.path.join(self.codeRoot, 'SimResults')
+        self.unitTestsOutputs = os.path.join(self.codeRoot, 'unitTestsOutputs')
+        # self.wavecalDir = os.path.join(self.prefix, 'wavecalR50_770')
+        self.wavecalDir = os.path.join(self.prefix, 'testing')
 #         self.wavecalName = 'simCalCube.fits'
         self.filelist = None
         self.lamlist = None

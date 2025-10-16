@@ -80,7 +80,7 @@ def testReduction(par, name, ifsimage):
             Return the reduced cube from the original IFS image
 
     '''
-    calCube = fits.open(par.wavecalDir + par.wavecalName)
+    calCube = fits.open(os.path.join(par.wavecalDir, par.wavecalName))
 
     waveCalArray = calCube[0].data  # wavecal[0,:,:]
     waveCalArray = waveCalArray / 1000.
@@ -95,8 +95,8 @@ def testReduction(par, name, ifsimage):
     cube = np.zeros((len(wavelengths), nlens, nlens))
 
     psftool = PSFLets()
-    lam = np.loadtxt(par.wavecalDir + "lamsol.dat")[:, 0]
-    allcoef = np.loadtxt(par.wavecalDir + "lamsol.dat")[:, 1:]
+    lam = np.loadtxt(os.path.join(par.wavecalDir, "lamsol.dat"))[:, 0]
+    allcoef = np.loadtxt(os.path.join(par.wavecalDir, "lamsol.dat"))[:, 1:]
 
     # lam in nm
     psftool.geninterparray(lam, allcoef)
@@ -156,7 +156,7 @@ def calculateWaveList(par, lam_list=None, num_wavelengths=None, method='lstsq'):
             Wavelengths at the edges of each bin
     '''
     if lam_list is None:
-        log.info(f'Reading in lam_list from {par.wavecalDir}lamsol.dat')
+        log.info(f'Reading in lam_list from {os.path.join(par.wavecalDir, "lamsol.dat")}')
         lamlist = np.loadtxt(os.path.join(par.wavecalDir, "lamsol.dat"))[:, 0]
     else:
         lamlist = lam_list
@@ -217,22 +217,22 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     if specialPolychrome is None:
         try:
             polychromeR = fits.open(
-                par.wavecalDir +
+                os.path.join(par.wavecalDir,
                 'polychromeR%d.fits.gz' %
-                (par.R))
+                (par.R)))
         except BaseException:
             polychromeR = fits.open(
-                par.wavecalDir +
+                os.path.join(par.wavecalDir,
                 'polychromeR%d.fits' %
-                (par.R))
+                (par.R)))
         psflets = polychromeR[0].data
     else:
         psflets = specialPolychrome.copy()
 
     polychromekey = fits.open(
-        par.wavecalDir +
+        os.path.join(par.wavecalDir,
         'polychromekeyR%d.fits' %
-        (par.R))
+        (par.R)))
     xindx = polychromekey[1].data
     yindx = polychromekey[2].data
     good = polychromekey[3].data
@@ -308,9 +308,9 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
 
     if hires:
         hires_polychromeR = fits.open(
-            par.wavecalDir +
+            os.path.join(par.wavecalDir,
             'hiresPolyChromeR%d.fits.gz' %
-            (par.R))[0].data
+            (par.R)))[0].data
         hires_model = np.zeros(hires_polychromeR[0].shape)
         for i in range(len(psflets)):
             ydim, xdim = ifsimage.data.shape
@@ -979,8 +979,8 @@ def fitspec_intpix(par, im, PSFlet_tool, lamlist, delt_y=6, flat=None,
 
     data = np.zeros(im.data.shape)
     data[:] = im.data
-    lamsol = np.loadtxt(par.wavecalDir + "lamsol.dat")[:, 0]
-    allcoef = np.loadtxt(par.wavecalDir + "lamsol.dat")[:, 1:]
+    lamsol = np.loadtxt(os.path.join(par.wavecalDir, "lamsol.dat"))[:, 0]
+    allcoef = np.loadtxt(os.path.join(par.wavecalDir, "lamsol.dat"))[:, 1:]
 
     # lam in nm
     PSFlet_tool.geninterparray(lamsol, allcoef)
@@ -1105,7 +1105,7 @@ def fitspec_intpix_np(
     yindx = PSFlet_tool.yindx
     Nmax = PSFlet_tool.nlam_max
     try:
-        sig = fits.open(par.wavecalDir + 'PSFwidths.fits')[0].data
+        sig = fits.open(os.path.join(par.wavecalDir, 'PSFwidths.fits'))[0].data
     except BaseException:
         log.warning(
             "No PSFLet widths found - assuming critical samping at central wavelength")
@@ -1125,11 +1125,11 @@ def fitspec_intpix_np(
     xarr, yarr = np.meshgrid(np.arange(Nmax), np.arange(delt_y))
 
     # loglam = np.log(lamlist)
-    lamsol = np.loadtxt(par.wavecalDir + "lamsol.dat")[:, 0]
-    allcoef = np.loadtxt(par.wavecalDir + "lamsol.dat")[:, 1:]
+    lamsol = np.loadtxt(os.path.join(par.wavecalDir, "lamsol.dat"))[:, 0]
+    allcoef = np.loadtxt(os.path.join(par.wavecalDir, "lamsol.dat"))[:, 1:]
     PSFlet_tool.geninterparray(lamsol, allcoef)
 
-    # polychromekey = fits.open(par.wavecalDir + 'polychromekeyR%d.fits' % (par.R))
+    # polychromekey = fits.open(os.path.join(par.wavecalDir, 'polychromekeyR%d.fits' % (par.R)))
 #     lams = polychromekey[0].data
 #     xindx = polychromekey[1].data+0.5
 #     yindx = polychromekey[2].data+0.5

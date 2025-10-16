@@ -19,8 +19,8 @@ class TestPixelSolution:
         from crispy.tools.locate_psflets import PSFLets
         
         psftool = PSFLets()
-        lamlist = np.loadtxt(wfirst_params.wavecalDir + "lamsol.dat")[:, 0]
-        allcoef = np.loadtxt(wfirst_params.wavecalDir + "lamsol.dat")[:, 1:]
+        lamlist = np.loadtxt(os.path.join(wfirst_params.wavecalDir, "lamsol.dat"))[:, 0]
+        allcoef = np.loadtxt(os.path.join(wfirst_params.wavecalDir, "lamsol.dat"))[:, 1:]
 
         psftool.geninterparray(lamlist, allcoef)
         psftool.genpixsol(wfirst_params, lamlist, allcoef)

@@ -152,8 +152,8 @@ class TestEndToEndScenarios:
         from crispy.tools.locate_psflets import PSFLets
         
         # Load reference data
-        lamlist = np.loadtxt(wfirst_params.wavecalDir + "lamsol.dat")[:, 0]
-        allcoef = np.loadtxt(wfirst_params.wavecalDir + "lamsol.dat")[:, 1:]
+        lamlist = np.loadtxt(os.path.join(wfirst_params.wavecalDir, "lamsol.dat"))[:, 0]
+        allcoef = np.loadtxt(os.path.join(wfirst_params.wavecalDir, "lamsol.dat"))[:, 1:]
         
         assert len(lamlist) > 0
         assert allcoef.shape[0] == len(lamlist)

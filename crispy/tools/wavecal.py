@@ -75,13 +75,14 @@ def do_inspection(par, image, xpos, ypos, lam, display_plot=False):
         circle = plt.Circle(val, 3, color='blue', lw=1, alpha=0.5)
         ax.add_artist(circle)
     # aps.plot(ax=ax,color='blue', lw=1, alpha=0.5)
-    fig.savefig(par.wavecalDir + 'inspection_%3d.png' % (lam), dpi=300)
+    fig.savefig(os.path.join(par.wavecalDir, 'inspection_%3d.png' % (lam)), dpi=300)
 
     if display_plot:
         plt.show(block=False)
-        plt.close(fig)
     else:
         plt.ion()
+    plt.close(fig) # Ensure that the plot gets closed, no matter what. Since display_plot doesn't seem to work on all machines. 
+
 
 
 def make_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
@@ -805,9 +806,9 @@ def makeHires(
                         high_res_array.astype(
                             np.float32)))
                 out.writeto(
-                    par.wavecalDir +
+                    os.path.join(par.wavecalDir,
                     'hires_psflets_lam%d.fits' %
-                    (lam[index]),
+                    (lam[index])),
                     overwrite=True)
     else:
         log.info('No parallel computation')
@@ -844,7 +845,7 @@ def makeHires(
                 #     for jj in range(di):
                 #         outim[ii * dj:(ii + 1) * dj, jj * dj:(jj + 1) * dj] = high_res_array[ii, jj]
                 out = fits.HDUList(fits.PrimaryHDU(high_res_array.astype(np.float32)))
-                out.writeto(par.wavecalDir + 'hires_psflets_lam%d.fits' % (lam[i]), overwrite=True)
+                out.writeto(os.path.join(par.wavecalDir, 'hires_psflets_lam%d.fits' % (lam[i])), overwrite=True)
 
     return hires_arrs
 
@@ -890,8 +891,8 @@ def fit_monochromatic_cube(cube,
 
 def monochromatic_update(par, inImage, inLam, order=3, apodize=False):
     #TODO, add docstring. inImage is an Image object that contains the monochromatic image
-    log.info(f"Making copies of wavelength solution from {par.wavecalDir} /lamsol.dat")
-    copy2(par.wavecalDir + "/lamsol.dat", par.wavecalDir + "/lamsol_old.dat")
+    log.info(f"Making copies of wavelength solution from {os.path.join(par.wavecalDir, 'lamsol.dat')}")
+    copy2(os.path.join(par.wavecalDir, "lamsol.dat"), os.path.join(par.wavecalDir, "lamsol_old.dat"))
     lamsol = np.loadtxt(os.path.join(par.wavecalDir, "lamsol.dat"))
     lam = lamsol[:, 0]
     allcoef = lamsol[:, 1:]
@@ -943,7 +944,7 @@ def monochromatic_update(par, inImage, inLam, order=3, apodize=False):
         (dphi * 180. / np.pi))
 
     log.info("Overwriting old wavecal")
-    np.savetxt(par.wavecalDir + "lamsol.dat", lamsol)
+    np.savetxt(os.path.join(par.wavecalDir, "lamsol.dat"), lamsol)
     log.info("Don't forget to run buildcalibrations again with makePolychrome=True!")
     return dx, dy, dphi
 
@@ -1234,33 +1235,33 @@ def buildcalibrations(
             ylistarr = np.array(dylist)
             snrlistarr = np.array(snrlist)
             out = fits.HDUList(fits.PrimaryHDU(xlistarr.astype(np.float32)))
-            out.writeto(outdir + 'dxlistarr.fits', overwrite=True)
+            out.writeto(os.path.join(outdir, 'dxlistarr.fits'), overwrite=True)
             out = fits.HDUList(fits.PrimaryHDU(ylistarr.astype(np.float32)))
-            out.writeto(outdir + 'dylistarr.fits', overwrite=True)
+            out.writeto(os.path.join(outdir, 'dylistarr.fits'), overwrite=True)
             out = fits.HDUList(fits.PrimaryHDU(snrlistarr.astype(np.float32)))
-            out.writeto(outdir + 'snrlistarr.fits', overwrite=True)
+            out.writeto(os.path.join(outdir, 'snrlistarr.fits'), overwrite=True)
             out = fits.HDUList(fits.PrimaryHDU(np.mean(ylistarr, axis=0).T.astype(np.float32)))
-            out.writeto(outdir + 'dylistarr_mean.fits', overwrite=True)
+            out.writeto(os.path.join(outdir, 'dylistarr_mean.fits'), overwrite=True)
             out = fits.HDUList(fits.PrimaryHDU(np.std(ylistarr, axis=0).T.astype(np.float32)))
-            out.writeto(outdir + 'dylistarr_std.fits', overwrite=True)
+            out.writeto(os.path.join(outdir, 'dylistarr_std.fits'), overwrite=True)
             out = fits.HDUList(fits.PrimaryHDU(np.mean(xlistarr, axis=0).T.astype(np.float32)))
-            out.writeto(outdir + 'dxlistarr_mean.fits', overwrite=True)
+            out.writeto(os.path.join(outdir, 'dxlistarr_mean.fits'), overwrite=True)
             out = fits.HDUList(fits.PrimaryHDU(np.std(xlistarr, axis=0).T.astype(np.float32)))
-            out.writeto(outdir + 'dxlistarr_std.fits', overwrite=True)
+            out.writeto(os.path.join(outdir, 'dxlistarr_std.fits'), overwrite=True)
             out = fits.HDUList(fits.PrimaryHDU(np.mean(snrlistarr, axis=0).T.astype(np.float32)))
-            out.writeto(outdir + 'snrlistarr_mean.fits', overwrite=True)
+            out.writeto(os.path.join(outdir, 'snrlistarr_mean.fits'), overwrite=True)
             out = fits.HDUList(fits.PrimaryHDU(np.std(snrlistarr, axis=0).T.astype(np.float32)))
-            out.writeto(outdir + 'snrlistarr_std.fits', overwrite=True)
+            out.writeto(os.path.join(outdir, 'snrlistarr_std.fits'), overwrite=True)
 
     else:
-        log.info("Loading wavelength solution from " + outdir + "lamsol.dat")
-        lam = np.loadtxt(outdir + "lamsol.dat")[:, 0]
-        allcoef = np.loadtxt(outdir + "lamsol.dat")[:, 1:]
+        log.info("Loading wavelength solution from " + os.path.join(outdir, "lamsol.dat"))
+        lam = np.loadtxt(os.path.join(outdir, "lamsol.dat"))[:, 0]
+        allcoef = np.loadtxt(os.path.join(outdir, "lamsol.dat"))[:, 1:]
 
         if finecal:
-            ylistarr = fits.getdata(outdir + 'dylistarr.fits')
-            xlistarr = fits.getdata(outdir + 'dxlistarr.fits')
-            snrlistarr = fits.getdata(outdir + 'snrlistarr.fits')
+            ylistarr = fits.getdata(os.path.join(outdir, 'dylistarr.fits'))
+            xlistarr = fits.getdata(os.path.join(outdir, 'dxlistarr.fits'))
+            snrlistarr = fits.getdata(os.path.join(outdir, 'snrlistarr.fits'))
 
     if finecal:
         finexy = [np.nanmean(xlistarr, axis=0), np.nanmean(ylistarr, axis=0), np.amin(snrlistarr, axis=0)]
@@ -1307,7 +1308,7 @@ def buildcalibrations(
             finexy=finexy,
             reflam=lam)
 
-    hires_list = np.sort(glob.glob(par.wavecalDir + 'hires_psflets_lam???.fits'))
+    hires_list = np.sort(glob.glob(os.path.join(par.wavecalDir, 'hires_psflets_lam???.fits')))
     # Now generate some arrays that describe the PSFLet width as a function of various things
     if makePSFWidths:
         log.info("Computing PSFLet widths...")
@@ -1362,20 +1363,20 @@ def buildcalibrations(
                     sigma_vs_pixelwavelength[i, j] = fit(psftool.lam_indx[i, j])
 
         # Save this cube of PSFwidths vs. pixel wavelengths to a .fits file
-        log.info("Saving PSFLet widths to " + outdir + "PSFwidths.fits")
+        log.info("Saving PSFLet widths to " + os.path.join(outdir, "PSFwidths.fits"))
         out = fits.HDUList(fits.PrimaryHDU(sigma_vs_pixelwavelength.astype(np.float32)))
-        out.writeto(outdir + 'PSFwidths.fits', overwrite=True)
+        out.writeto(os.path.join(outdir, 'PSFwidths.fits'), overwrite=True)
 
         # Also save this to a .fits file with the contents of PSFloc.fits for convenience
-        log.info("Also saving PSFLet widths to " + outdir + "calib.fits along with PSFloc.fits contents")
-        calib_hdus = fits.open(outdir + 'PSFloc.fits')
+        log.info("Also saving PSFLet widths to " + os.path.join(outdir, "calib.fits") + " along with PSFloc.fits contents")
+        calib_hdus = fits.open(os.path.join(outdir, 'PSFloc.fits'))
         outkey = fits.HDUList(calib_hdus[0])
         outkey.append(calib_hdus[1])
         outkey.append(calib_hdus[2])
         outkey.append(calib_hdus[3])
         outkey.append(calib_hdus[4])
         outkey.append(fits.PrimaryHDU(sigma_vs_pixelwavelength.astype(np.float32)))
-        outkey.writeto(outdir + 'calib.fits', overwrite=True)
+        outkey.writeto(os.path.join(outdir, 'calib.fits'), overwrite=True)
 
     if makePolychrome:
         if not makehiresPSFlets:

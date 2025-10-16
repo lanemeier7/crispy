@@ -170,7 +170,7 @@ def polychromeIFS(par, inWavelist, inputcube,
     ######################################################################
     # Note: lam_arr needs to be provided the first time you create monochromatic flats!
     if lam_arr is None:
-        lam_arr = np.loadtxt(par.wavecalDir + "lamsol.dat")[:, 0]
+        lam_arr = np.loadtxt(os.path.join(par.wavecalDir, "lamsol.dat"))[:, 0]
 
     # List to store high-resolution PSF arrays for each wavelength
     high_res_arrays = []  
@@ -182,7 +182,7 @@ def polychromeIFS(par, inWavelist, inputcube,
         upsample = 10
     else:
         try:
-            hires_list = np.sort(glob.glob(par.wavecalDir + 'hires_psflets_lam???.fits'))
+            hires_list = np.sort(glob.glob(os.path.join(par.wavecalDir, 'hires_psflets_lam???.fits')))
             high_res_arrays = [pyf.getdata(filename) for filename in hires_list]
             log.info('Loaded PSFLet templates')
         except BaseException:
@@ -245,15 +245,15 @@ def polychromeIFS(par, inWavelist, inputcube,
             polyimage[index] = poly
 
     if par.saveRotatedInput:
-        Image(data=np.array(inputCube), header=par.hdr).write(par.exportDir + '/imagePlaneRot.fits')
+        Image(data=np.array(inputCube), header=par.hdr).write(os.path.join(par.exportDir, 'imagePlaneRot.fits'))
     if par.savePoly:
-        Image(data=polyimage, header=par.hdr).write(par.exportDir + '/' + name + 'poly.fits')
+        Image(data=polyimage, header=par.hdr).write(os.path.join(par.exportDir, name + 'poly.fits'))
     detectorFrame = np.sum(polyimage, axis=0)
 
     if par.pxperdetpix != 1.:
         detectorFrame = rebinDetector(par, detectorFrame, clip=False)
     if par.saveDetector:
-        Image(data=detectorFrame, header=par.hdr).write(par.exportDir + '/' + name + '.fits')
+        Image(data=detectorFrame, header=par.hdr).write(os.path.join(par.exportDir, name + '.fits'))
     log.info('Done.')
     t['End'] = time.time()
     log.info("Performance: %d seconds total" % (t['End'] - t['Start']))
@@ -347,9 +347,8 @@ def reduceIFSMap(
         reducedName += '_red_' + method
         cube = lstsqExtract(
             par,
-            par.exportDir +
-            '/' +
-            reducedName,
+            os.path.join(par.exportDir,
+            reducedName),
             IFSimage,
             smoothandmask=smoothbad,
             hires=hires,
@@ -364,10 +363,10 @@ def reduceIFSMap(
             gain=gain)
     elif method == 'optext':
         reducedName += '_red_optext'
-        cube = intOptimalExtract(par, par.exportDir + '/' + reducedName, IFSimage, smoothandmask=smoothbad)
+        cube = intOptimalExtract(par, os.path.join(par.exportDir, reducedName), IFSimage, smoothandmask=smoothbad)
     elif method == 'sum':
         reducedName += '_red_sum'
-        cube = intOptimalExtract(par, par.exportDir + '/' + reducedName, IFSimage, smoothandmask=smoothbad, sum=True)
+        cube = intOptimalExtract(par, os.path.join(par.exportDir, reducedName), IFSimage, smoothandmask=smoothbad, sum=True)
 
     else:
         log.info("Method not found")
@@ -431,10 +430,10 @@ def reduceIFSMapList(
             reducedName = IFSimageNameList[i].split('/')[-1].split('.')[0]
             if method == 'lstsq':
                 reducedName += '_red_lstsq'
-                tasks.put(Task(i, lstsqExtract, (par, par.exportDir + '/' + reducedName, IFSimage, smoothbad)))
+                tasks.put(Task(i, lstsqExtract, (par, os.path.join(par.exportDir, reducedName), IFSimage, smoothbad)))
             elif method == 'optext':
                 reducedName += '_red_optext'
-                tasks.put(Task(i, intOptimalExtract, (par, par.exportDir + '/' + reducedName, IFSimage, smoothbad)))
+                tasks.put(Task(i, intOptimalExtract, (par, os.path.join(par.exportDir, reducedName), IFSimage, smoothbad)))
             else:
                 log.info("Method not found")
 
@@ -450,10 +449,10 @@ def reduceIFSMapList(
             reducedName = IFSimageNameList[i].split('/')[-1].split('.')[0]
             if method == 'lstsq':
                 reducedName += '_red_lstsq'
-                cube = lstsqExtract(par, par.exportDir + '/' + reducedName, IFSimage, smoothbad)
+                cube = lstsqExtract(par, os.path.join(par.exportDir, reducedName), IFSimage, smoothbad)
             elif method == 'optext':
                 reducedName += '_red_optext'
-                cube = intOptimalExtract(par, par.exportDir + '/' + reducedName, IFSimage, smoothbad)
+                cube = intOptimalExtract(par, os.path.join(par.exportDir, reducedName), IFSimage, smoothbad)
             else:
                 log.info("Method not found")
     log.info('Elapsed time: %fs' % (time.time() - start))
@@ -555,7 +554,7 @@ def createWavecalFiles(par, lamlist, dlam=1., flux=None, background=0.0):
         if flux is not None:
             detectorFrame /= getQE(par, wav) * (par.lensletsampling / inCube[0].header['PIXSIZE'])**2
             detectorFrame = np.random.poisson(flux * detectorFrame + background)
-        filename = par.wavecalDir + 'det_%3d.fits' % (wav)
+        filename = os.path.join(par.wavecalDir, 'det_%3d.fits' % (wav))
         filelist.append(filename)
         Image(data=detectorFrame, header=par.hdr).write(filename, overwrite=True)
     par.lamlist = lamlist
