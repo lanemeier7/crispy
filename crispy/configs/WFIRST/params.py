@@ -38,7 +38,7 @@ class Params(object):
         # Rotation angle of the lenslets (radians)
         self.philens = arcsin(1. / sqrt(self.interlace**2 + 1))
         self.lensletsampling = 1. / 2.  # lenslet size in lambda/D
-        self.lensletlam = 770.     # Wavelength at which this is defined (nm)
+        self.lensletlam = 770.     # Wavelength at which lenslet sampling is defined (nm)
         self.pinhole = False       # Use a pinhole grid?
 
         ######################################################################
@@ -105,71 +105,20 @@ class Params(object):
         self.hdr = fits.PrimaryHDU().header
         self.hdr.append(('comment', ''), end=True)
         self.hdr.append(('comment', '*' * 60), end=True)
-        self.hdr.append(
-            ('comment',
-             '*' *
-             22 +
-             ' General parameters ' +
-             '*' *
-             18),
-            end=True)
+        self.hdr.append(('comment', '*' * 22 + ' General parameters ' + '*' * 18), end=True)
         self.hdr.append(('comment', '*' * 60), end=True)
         self.hdr.append(('comment', ''), end=True)
-        self.hdr.append(
-            ('NLENS',
-             self.nlens,
-             '# lenslets across array'),
-            end=True)
-        self.hdr.append(
-            ('PITCH',
-             self.pitch,
-             'Lenslet pitch (meters)'),
-            end=True)
+        self.hdr.append(('NLENS', self.nlens, '# lenslets across array'), end=True)
+        self.hdr.append(('PITCH', self.pitch, 'Lenslet pitch (meters)'), end=True)
         self.hdr.append(('INTERLAC', self.interlace, 'Interlacing'), end=True)
-        self.hdr.append(
-            ('PHILENS',
-             self.philens * 180. / np.pi,
-             'Rotation angle of the lenslets (deg)'),
-            end=True)
-        self.hdr.append(
-            ('PIXSIZE',
-             self.pixsize,
-             'Pixel size (meters)'),
-            end=True)
-        self.hdr.append(
-            ('LENSAMP',
-             self.lenslet_sampling,
-             'Lenslet sampling (lam/D)'),
-            end=True)
-        self.hdr.append(
-            ('LSAMPWAV',
-             self.lenslet_wav,
-             'Lenslet sampling wavelength (nm)'),
-            end=True)
-        self.hdr.append(
-            ('FWHM',
-             self.FWHM,
-             'FHWM of PSFLet at detector (pixels)'),
-            end=True)
-        self.hdr.append(
-            ('FWHMLAM',
-             self.FWHMlam,
-             'Wavelength at which FWHM is defined (nm)'),
-            end=True)
-        self.hdr.append(
-            ('NPIX',
-             self.npix,
-             'Number of detector pixels'),
-            end=True)
+        self.hdr.append(('PHILENS', self.philens * 180. / np.pi, 'Rotation angle of the lenslets (deg)'), end=True)
+        self.hdr.append(('PIXSIZE', self.pixsize, 'Pixel size (meters)'), end=True)
+        self.hdr.append(('LENSAMP', self.lenslet_sampling, 'Lenslet sampling (lam/D)'), end=True)
+        self.hdr.append(('LSAMPWAV', self.lenslet_wav, 'Lenslet sampling wavelength (nm)'), end=True)
+        self.hdr.append(('FWHM', self.FWHM, 'FHWM of PSFLet at detector (pixels)'), end=True)
+        self.hdr.append(('FWHMLAM', self.FWHMlam, 'Wavelength at which FWHM is defined (nm)'), end=True)
+        self.hdr.append(('NPIX', self.npix, 'Number of detector pixels'), end=True)
         self.hdr.append(('BW', self.BW, 'Bandwidth'), end=True)
-        self.hdr.append(
-            ('PIXPRLAM',
-             self.npixperdlam,
-             'Pixels per resolution element'),
-            end=True)
-        self.hdr.append(
-            ('RESLSTSQ',
-             self.nchanperspec_lstsq,
-             'num_wavelengths per Nyq. sample for lstsq extraction'),
-            end=True)
+        self.hdr.append(('PIXPRLAM', self.npixperdlam, 'Pixels per resolution element'), end=True)
+        self.hdr.append(('RESLSTSQ', self.nchanperspec_lstsq, 'num_wavelengths per Nyq. sample for lstsq extraction'), end=True)
         self.hdr.append(('R', self.R, 'Spectral resolution'), end=True)
