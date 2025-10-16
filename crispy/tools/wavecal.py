@@ -16,13 +16,14 @@ import multiprocessing
 import time
 import re
 import os
-from crispy.tools.locate_psflets import locatePSFlets, PSFLets, fine_transform
+from crispy.tools.locate_psflets import locatePSFlets, PSFLets, transform, fine_transform
 from crispy.tools.image import Image
 from crispy.tools.par_utils import Task, Consumer
 import matplotlib as mpl
 import numpy as np
 from scipy import signal
 from astropy.io import fits as fits
+import pandas as pd
 
 from crispy.tools.initLogger import getLogger
 log = getLogger('crispy')
@@ -1491,7 +1492,7 @@ def buildcalibrations(
     outkey.append(fits.PrimaryHDU(np.asarray(xpos)))
     outkey.append(fits.PrimaryHDU(np.asarray(ypos)))
     outkey.append(fits.PrimaryHDU(np.asarray(good).astype(np.uint8)))
-    outkey.writeto(f"{outdir}polychromekeyR{par.R}.fits", overwrite=True)
+    outkey.writeto(f"{os.path.join(outdir, 'polychromekeyR{par.R}.fits')}", overwrite=True)
 
     if makehiresPolychrome:
         log.info('Making high-resolution polychrome cube (can use lots of memory)')
@@ -1549,14 +1550,14 @@ def buildcalibrations(
 
         log.info('Saving hi-res polychrome cube')
         out = fits.HDUList(fits.PrimaryHDU(hirespoly.astype(np.float32)))
-        out.writeto(f"{outdir}hirespolychromeR{par.R}.fits.gz", overwrite=True)
+        out.writeto(f"{os.path.join(outdir, 'hirespolychromeR{par.R}.fits.gz')}", overwrite=True)
         out = fits.HDUList(fits.PrimaryHDU(np.sum(hirespoly, axis=0).astype(np.float32)))
-        out.writeto(f"{outdir}hiresPolychromeR{par.R}stack.fits", overwrite=True)
+        out.writeto(f"{os.path.join(outdir, 'hiresPolychromeR{par.R}stack.fits')}", overwrite=True)
 
     log.info(f"Total time elapsed: {time.time() - tstart:.0f} s")
 
 
-def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavelength):
+def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavelength, plot_mosaic=False):
     """
     Compute the derivative of coefficients with respect to wavelength at a specific wavelength.
 
@@ -1570,6 +1571,8 @@ def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavele
         Contents of the lamsol data file. Stored as a DataFrame where the index is wavelength and columns contain coefficients
     wavelength : float
         The specific wavelength at which to evaluate the derivative
+    plot_mosaic : bool, optional
+        Whether to plot a mosaic of wavelength vs. coefficient plots with the best-fit polynomial overlaid
 
     Returns:
     --------
@@ -1583,46 +1586,25 @@ def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavele
         if (order + 1) * (order + 2) == num_coeffs:
             break 
 
-    # Check if the wavelength was explicitly measured, use central difference formula
-    if wavelength in lamsol_df[0]:
-        # Find the index that corresponds to this wavelength
-        idx = lamsol_df[0].searchsorted(wavelength)
+    # fit a low-order polynomial to each coefficient as a function of wavelength
+    # and take the derivative of that polynomial at the specified wavelength
+    # Optionally, plot a mosaic of wavelength vs. coefficient plots with the best-fit polynomial overlaid
+    if plot_mosaic:
+        nrows, ncols = 4, (num_coeffs + 3) // 4
+        fig, ax = plt.subplots(nrows=nrows, ncols=ncols, figsize=(11, 8))
+    coefficient_derivatives = []
+    for i, col in enumerate(lamsol_df.columns[1:]):
+        poly = np.poly1d(np.polyfit(lamsol_df[0], lamsol_df[col], deg=4))  # Fit a polynomial
+        dpoly = poly.deriv()  # Derivative of the polynomial
+        coefficient_derivatives.append(dpoly(wavelength))  # Evaluate the derivative at the specified wavelength
 
-        # Handle edge cases
-        if idx == 0:
-            # Forward difference for first point
-            wavelength_next = lamsol_df.loc[idx + 1, 0]
-            derivative = (lamsol_df.loc[idx + 1] - lamsol_df.loc[idx]) / (wavelength_next - wavelength)
-        elif idx == len(lamsol_df.index) - 1:
-            # Backward difference for last point
-            wavelength_prev = lamsol_df.loc[idx - 1, 0]
-            derivative = (lamsol_df.loc[idx] - lamsol_df.loc[idx - 1]) / (wavelength - wavelength_prev)
-        else:
-            # Central difference for interior points
-            wavelength_next = lamsol_df.loc[idx + 1, 0]
-            wavelength_prev = lamsol_df.loc[idx - 1, 0]
-            derivative = (lamsol_df.loc[idx + 1] - lamsol_df.loc[idx - 1]) / (wavelength_next - wavelength_prev)
-    else:
-        # For wavelengths that weren't explicitly measured, find the index where this wavelength would 
-        # be inserted to maintain order and interpolate between surrounding points
-        idx = lamsol_df[0].searchsorted(wavelength)
-        if idx == 0:
-            # Forward difference if wavelength is before the first index
-            wavelength1, wavelength2 = lamsol_df.loc[0, 0], lamsol_df.loc[1, 0]
-            c1, c2 = lamsol_df.iloc[0], lamsol_df.iloc[1]
-            derivative = (c2 - c1) / (wavelength2 - wavelength1)
-        elif idx >= len(lamsol_df.index):
-            # Backward difference if wavelength is after the last index
-            wavelength1, wavelength2 = lamsol_df.loc[len(lamsol_df.index) - 2, 0], lamsol_df.loc[len(lamsol_df.index) - 1, 0]
-            c1, c2 = lamsol_df.loc[len(lamsol_df.index) - 2], lamsol_df.loc[len(lamsol_df.index) - 1]
-            derivative = (c2 - c1) / (wavelength2 - wavelength1)
-        else:
-            # Linear interpolation between surrounding points
-            wavelength1, wavelength2 = lamsol_df.loc[idx - 1, 0], lamsol_df.loc[idx, 0]
-            c1, c2 = lamsol_df.loc[idx - 1], lamsol_df.loc[idx]
-            derivative = (c2 - c1) / (wavelength2 - wavelength1)
-
-    coefficient_derivatives = list(derivative[1:])  # Skip the first column since it's wavelength, not a coefficient
+        # Optionally, plot the best-fit polynomial and the data points
+        if plot_mosaic:
+            ax[i // (nrows + 1), i % ncols].scatter(lamsol_df[0], lamsol_df[col], label='Data')
+            ax[i // (nrows + 1), i % ncols].plot(lamsol_df[0], poly(lamsol_df[0]), 'r--', label='Best-fit')
+            ax[i // (nrows + 1), i % ncols].set_title(f'Coefficient {i}')
+    if plot_mosaic:
+        fig.tight_layout()
 
     # Create some blank arrays that we will fill in with dx/dlambda and dy/dlambda values
     dx_dlambda = np.zeros(np.asarray(x_lens_ind).shape)
@@ -1633,10 +1615,12 @@ def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavele
     for ix in range(order + 1):
         for iy in range(order - ix + 1):
             dx_dlambda += coefficient_derivatives[i] * x_lens_ind**ix * y_lens_ind**iy
+            # print(f'X^{ix} Y^{iy} -> {coefficient_derivatives[i] * x_lens_ind**ix * y_lens_ind**iy}')
             i += 1
     for ix in range(order + 1):
         for iy in range(order - ix + 1):
             dy_dlambda += coefficient_derivatives[i] * x_lens_ind**ix * y_lens_ind**iy
+            # print(f'X^{ix} Y^{iy} -> {coefficient_derivatives[i] * x_lens_ind**ix * y_lens_ind**iy}')
             i += 1
 
     return dx_dlambda, dy_dlambda
@@ -1686,7 +1670,7 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         mask = (x_transformed >= 0) & (x_transformed < 1024) & \
             (y_transformed >= 0) & (y_transformed < 1024)
 
-        dx_dlambda, dy_dlambda = derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavelength)
+        dx_dlambda, dy_dlambda = derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavelength, plot_mosaic=False)
         dispersion_nm_per_pix = 1 / np.sqrt(dx_dlambda**2 + dy_dlambda**2)
 
         fig, ax = plt.subplots(figsize=(6, 5))
