@@ -1557,7 +1557,7 @@ def buildcalibrations(
     log.info(f"Total time elapsed: {time.time() - tstart:.0f} s")
 
 
-def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavelength, plot_mosaic=False):
+def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavelength, plot_mosaic=False, lamsol_fit_order=4):
     """
     Compute the derivative of coefficients with respect to wavelength at a specific wavelength.
 
@@ -1573,6 +1573,8 @@ def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavele
         The specific wavelength at which to evaluate the derivative
     plot_mosaic : bool, optional
         Whether to plot a mosaic of wavelength vs. coefficient plots with the best-fit polynomial overlaid
+    order : int, optional
+        Order of the polynomial fit to use for the coefficients
 
     Returns:
     --------
@@ -1594,7 +1596,7 @@ def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavele
         fig, ax = plt.subplots(nrows=nrows, ncols=ncols, figsize=(11, 8))
     coefficient_derivatives = []
     for i, col in enumerate(lamsol_df.columns[1:]):
-        poly = np.poly1d(np.polyfit(lamsol_df[0], lamsol_df[col], deg=4))  # Fit a polynomial
+        poly = np.poly1d(np.polyfit(lamsol_df[0], lamsol_df[col], deg=lamsol_fit_order))  # Fit a polynomial
         dpoly = poly.deriv()  # Derivative of the polynomial
         coefficient_derivatives.append(dpoly(wavelength))  # Evaluate the derivative at the specified wavelength
 
@@ -1627,7 +1629,7 @@ def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavele
 
 
 # Display a plot of dispersion values at a few different wavelengths
-def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_directory=None):
+def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_directory=None, lamsol_fit_order=4):
     """
     Generate plots illustrating the dispersion at specified wavelengths, 
     as well as a plot of dispersion vs. wavelength for a lenslet in the middle of the array.
@@ -1642,6 +1644,9 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         Filepath to the lamsol.dat file
     output_directory : str, optional
         Directory path where plots should be saved. If None, plots are not saved.
+    order : int, optional
+        Order of the polynomial fit to use for the lamsol coefficients
+    
 
     Returns:
     --------
@@ -1670,12 +1675,15 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         mask = (x_transformed >= 0) & (x_transformed < 1024) & \
             (y_transformed >= 0) & (y_transformed < 1024)
 
-        dx_dlambda, dy_dlambda = derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavelength, plot_mosaic=False)
+        dx_dlambda, dy_dlambda = derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavelength, plot_mosaic=False, lamsol_fit_order=lamsol_fit_order)
         dispersion_nm_per_pix = 1 / np.sqrt(dx_dlambda**2 + dy_dlambda**2)
 
         fig, ax = plt.subplots(figsize=(6, 5))
         scatter = ax.scatter(x_transformed[mask], y_transformed[mask], c=dispersion_nm_per_pix[mask], s=20)
         cbar = fig.colorbar(scatter, ax=ax)
+        # ax.scatter(x_transformed[54, 54], y_transformed[54, 54], c='r', marker='x', s=40)  # Plot the location of the middle lenslet
+        # tricontour = ax.tricontourf(x_transformed[mask].ravel(), y_transformed[mask].ravel(), dispersion_nm_per_pix[mask].ravel(), levels=10)
+        # cbar = fig.colorbar(tricontour, ax=ax)
         cbar.set_label('Dispersion (nm/pixel)')
         ax.set_xlim(0, 1024)
         ax.set_ylim(0, 1024)
@@ -1694,15 +1702,17 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
 
     # Display a plot of dispersion vs. wavelength for a lenslet in the middle of the array
     dispersion_array = []
-    lenslet_idx = nlens // 2
+    lenslet_idx = 0 # The middle lenslet index
     for wavelength in lamsol_df[0]:
-        dx_dlambda, dy_dlambda = derivative_of_lamsol_at_wavelength(lenslet_idx, lenslet_idx, lamsol_df, wavelength)
+        dx_dlambda, dy_dlambda = derivative_of_lamsol_at_wavelength(lenslet_idx, lenslet_idx, lamsol_df, wavelength, lamsol_fit_order=lamsol_fit_order)
         dispersion_nm_per_pix = 1 / np.sqrt(dx_dlambda**2 + dy_dlambda**2)
         dispersion_array.append(dispersion_nm_per_pix)
     fig, ax = plt.subplots(figsize=(5, 4))
     ax.plot(lamsol_df[0], dispersion_array)
     ax.set_xlabel('Wavelength (nm)')
     ax.set_ylabel('Dispersion (nm/pixel)')
-    ax.set_title(f'Dispersion vs. Wavelength at Lenslet ({lenslet_idx}, {lenslet_idx})')
+    ax.set_title(f'Dispersion vs. Wavelength at Lenslet ({lenslet_idx + nlens // 2}, {lenslet_idx + nlens // 2})')
     ax.grid()
     fig.tight_layout()
+    
+    return lamsol_df[0].values, dispersion_array
