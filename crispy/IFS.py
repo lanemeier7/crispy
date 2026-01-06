@@ -545,9 +545,9 @@ def createWavecalFiles(par, lamlist, dlam=1., flux=None, background=0.0):
         # note the argument lam_arr, necessary when computing things for the
         # first time
         detectorFrame = polychromeIFS(
-            par,
-            [wav],
-            inCube[0],
+            par=par,
+            inWavelist=[wav],
+            inputcube=inCube[0],
             dlambda=dlam,
             parallel=False,
             lam_arr=lamlist)
