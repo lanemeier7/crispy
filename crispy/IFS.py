@@ -552,7 +552,7 @@ def createWavecalFiles(par, lamlist, dlam=1., flux=None, background=0.0):
             parallel=False,
             lam_arr=lamlist)
         if flux is not None:
-            detectorFrame /= getQE(par, wav) * (par.lensletsampling / inCube[0].header['PIXSIZE'])**2
+            detectorFrame /= getQE(par, wav) * (par.lenslet_sampling / inCube[0].header['PIXSIZE'])**2
             detectorFrame = np.random.poisson(flux * detectorFrame + background)
         filename = os.path.join(par.wavecalDir, 'det_%3d.fits' % (wav))
         filelist.append(filename)

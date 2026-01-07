@@ -43,8 +43,8 @@ class Params(object):
         self.interlace = 2.          # Interlacing
         # Rotation angle of the lenslets (radians)
         self.philens = arcsin(1. / sqrt(self.interlace**2 + 1))
-        self.lensletsampling = 1. / 2.  # lenslet size in lambda/D
-        self.lensletlam = 660.     # Wavelength at which this is defined (nm)
+        self.lenslet_sampling = 1. / 2.  # lenslet size in lambda/D
+        self.lenslet_wav = 660.     # Wavelength at which this is defined (nm)
 
         ######################################################################
         # Detector stuff
@@ -101,8 +101,8 @@ class Params(object):
 
         # carry-over old parameter names
         # Wavelength at which this is defined (nm)
-        self.lenslet_wav = self.lensletlam
-        self.lenslet_sampling = self.lensletsampling  # lenslet size in lambda/D
+        self.lenslet_wav = self.lenslet_wav
+        self.lenslet_sampling = self.lenslet_sampling  # lenslet size in lambda/D
 
         self.makeHeader()
 

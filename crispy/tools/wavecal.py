@@ -418,10 +418,6 @@ def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, normalize=True):
     hires_arr : ndarray
         4D array of shape (nsubarr, nsubarr, array_size, array_size) containing
         the high resolution PSFlets
-
-    Notes
-    -----
-    # TODO rename all instances of 'normalize' to 'normalize'
     """
     # Determine side length of the upsampled array
     array_size = upsample * (npix + 1)  
