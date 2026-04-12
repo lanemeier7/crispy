@@ -1623,12 +1623,64 @@ def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavele
 
     return dx_dlambda, dy_dlambda
 
+def interpolate_lamsol_wavelengths(lamsol_df, target_wavelengths=None, lamsol_fit_order=4, plot_mosaic=False):
+    """
+    Interpolate the lamsol coefficients at specific target wavelengths using polynomial fits.
+
+    Parameters:
+    -----------
+    lamsol_df : pandas.DataFrame
+        Contents of the lamsol data file. Stored as a DataFrame where the index is wavelength and columns contain coefficients
+    target_wavelengths : list
+        List of wavelengths at which to interpolate the coefficients
+    lamsol_fit_order : int, optional
+        Order of the polynomial fit to use for the coefficients
+    plot_mosaic : bool, optional
+        Whether to plot a mosaic of wavelength vs. coefficient points with best-fit polynomials overlaid
+
+    Returns:
+    --------
+    interpolated_df : pandas.DataFrame
+        DataFrame with the same format as lamsol_df, where each row corresponds to a target wavelength
+        and columns contain the interpolated coefficients at that wavelength
+    """
+    if target_wavelengths is None:
+        raise ValueError("No target wavelengths provided for interpolation")
+
+    # Fit one polynomial per coefficient column.
+    fitted_polynomials = []
+    for col in lamsol_df.columns[1:]:
+        fitted_polynomials.append(np.poly1d(np.polyfit(lamsol_df[0], lamsol_df[col], deg=lamsol_fit_order)))
+
+    if plot_mosaic:
+        num_coeffs = len(fitted_polynomials)
+        nrows, ncols = 4, (num_coeffs + 3) // 4
+        fig, ax = plt.subplots(nrows=nrows, ncols=ncols, figsize=(11, 8))
+        ax = np.atleast_1d(ax).ravel()
+        for i, (col, poly) in enumerate(zip(lamsol_df.columns[1:], fitted_polynomials)):
+            ax[i].scatter(lamsol_df[0], lamsol_df[col], label='Data')
+            ax[i].plot(lamsol_df[0], poly(lamsol_df[0]), 'r--', label='Best-fit')
+            ax[i].set_title(f'Coefficient {i}')
+        for i in range(num_coeffs, len(ax)):
+            ax[i].axis('off')
+        fig.tight_layout()
+
+    rows = []
+    for wavelength in target_wavelengths:
+        coeffs_at_wavelength = [wavelength]
+        for poly in fitted_polynomials:
+            coeffs_at_wavelength.append(poly(wavelength))  # Evaluate the polynomial at the target wavelength
+        rows.append(coeffs_at_wavelength)
+
+    return pd.DataFrame(rows, columns=lamsol_df.columns)
 
 # Display a plot of dispersion values at a few different wavelengths
-def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_directory=None, lamsol_fit_order=4):
+def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_directory=None, lamsol_fit_order=4,
+                          sensor_dimensions=(1200, 800)):
     """
-    Generate plots illustrating the dispersion at specified wavelengths, 
-    as well as a plot of dispersion vs. wavelength for a lenslet in the middle of the array.
+    Generate plots illustrating the dispersion map at specified wavelengths, 
+    a plot of dispersion vs. wavelength for a lenslet in the middle of the array, 
+    and a map of trace length (over a specified wavelength range) across the detector. 
 
     Parameters:
     -----------
@@ -1642,6 +1694,8 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         Directory path where plots should be saved. If None, plots are not saved.
     order : int, optional
         Order of the polynomial fit to use for the lamsol coefficients
+    sensor_dimensions : tuple, optional
+        Dimensions of the sensor in pixels, used for plotting boundaries of the detector
     
 
     Returns:
@@ -1656,7 +1710,8 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
     num_coeffs = lamsol_df.shape[1] - 1
     for order in range(10):
         if (order + 1) * (order + 2) == num_coeffs:
-            break        
+            break
+    print('Guessed polynomial order for lamsol coefficients: ', order)
 
     # Generate some arrays that represent the x/y indices of the lenslets
     # Also, create a mask of lenslets that fall on the detector
@@ -1668,8 +1723,8 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         # Determine the x/y coordinates of the lenslets on the detector, at the wavelength closest to the desired wavelength
         _coefficients_for_transformation = lamsol_df.loc[(lamsol_df[0] - wavelength).abs().idxmin()].values[1:]
         x_transformed, y_transformed = transform(x_lens_ind, y_lens_ind, order=order, coef=_coefficients_for_transformation)
-        mask = (x_transformed >= 0) & (x_transformed < 1024) & \
-            (y_transformed >= 0) & (y_transformed < 1024)
+        mask = (x_transformed >= 0) & (x_transformed < sensor_dimensions[0]) & \
+            (y_transformed >= 0) & (y_transformed < sensor_dimensions[1])
 
         dx_dlambda, dy_dlambda = derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavelength, plot_mosaic=False, lamsol_fit_order=lamsol_fit_order)
         dispersion_nm_per_pix = 1 / np.sqrt(dx_dlambda**2 + dy_dlambda**2)
@@ -1681,8 +1736,8 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         # tricontour = ax.tricontourf(x_transformed[mask].ravel(), y_transformed[mask].ravel(), dispersion_nm_per_pix[mask].ravel(), levels=10)
         # cbar = fig.colorbar(tricontour, ax=ax)
         cbar.set_label('Dispersion (nm/pixel)')
-        ax.set_xlim(0, 1024)
-        ax.set_ylim(0, 1024)
+        ax.set_xlim(0, sensor_dimensions[0])
+        ax.set_ylim(0, sensor_dimensions[1])
         ax.set_aspect('equal')
         ax.set_xlabel('Detector X (pixels)')
         ax.set_ylabel('Detector Y (pixels)')
@@ -1710,5 +1765,24 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
     ax.set_title(f'Dispersion vs. Wavelength at Lenslet ({lenslet_idx + nlens // 2}, {lenslet_idx + nlens // 2})')
     ax.grid()
     fig.tight_layout()
+    
+    # Display a plot of PSF position vs wavelength for a single lenslet, with the best-fit polynomial overlaid
+    lenslet_idx = 0 # The middle lenslet index
+    x_positions = []
+    y_positions = []
+    for wavelength in lamsol_df[0]:
+        _coefficients_for_transformation = lamsol_df[lamsol_df[0] == wavelength].values[0][1:]
+        x_transformed, y_transformed = transform(x_lens_ind, y_lens_ind, order=order, coef=_coefficients_for_transformation)
+        x_positions.append(x_transformed[lenslet_idx, lenslet_idx])
+        y_positions.append(y_transformed[lenslet_idx, lenslet_idx])
+    separations = np.sqrt((np.array(x_positions) - x_positions[0])**2 + (np.array(y_positions) - y_positions[0])**2)
+    fig, ax = plt.subplots(figsize=(5, 4))
+    ax.scatter(lamsol_df[0], separations, label='Distance along trace (pixels)')
+    ax.set_xlabel('Wavelength (nm)')
+    ax.set_ylabel('Separation (pixels)')
+    ax.set_title(f'PSF Position vs. Wavelength at Lenslet ({lenslet_idx + nlens // 2}, {lenslet_idx + nlens // 2})')
+    ax.legend()
+    fig.tight_layout()
+    
     
     return lamsol_df[0].values, dispersion_array
