@@ -129,7 +129,8 @@ class PSFLets:
             coef = np.linalg.lstsq(log_wavelength_powers, allcoef[:, i])[0]
             self.interp_arr[:, i] = coef
 
-    # COMMENTED OUT: Function commented out to avoid confusion until we understand its purpose
+    # COMMENTED OUT: Function commented out to avoid confusion until we understand its purpose. 
+    # Note from Evan: Looks like this is an unfinished version of another return_locations function that is still in use elsewhere in this module. 
     # def return_locations_short(self, coef, xindx, yindx):
     #     '''
     #     Returns the x,y detector location of a given lenslet for a given polynomial fit
@@ -261,8 +262,7 @@ class PSFLets:
 
         coeforder = int(np.sqrt(allcoef.shape[1])) - 1
         if not (coeforder + 1) * (coeforder + 2) == allcoef.shape[1]:
-            raise ValueError(
-                "Number of coefficients incorrect for polynomial order.")
+            raise ValueError("Number of coefficients incorrect for polynomial order.")
 
         coef = np.zeros((coeforder + 1) * (coeforder + 2))
         for k in range(self.order + 1):

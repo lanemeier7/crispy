@@ -10,8 +10,9 @@ image_filepath = r"C:\Users\ebray\Box\ExoSpec-shared\1_IFS\PISCES\Cal_Data\CRISP
 log.info(f"Test log output")
 test_image = Image(filename=image_filepath)
 
-# %%
-# Section: Dispersion visualization from lamsol
+# =============================================================
+# %% Section: Dispersion visualization from lamsol
+# =============================================================
 from crispy.tools.wavecal import illustrate_dispersion
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -23,8 +24,10 @@ lamsol_filepath = r"C:\Users\ebray\Box\ExoSpec-shared\1_IFS\PISCES\Cal_Data\CRIS
 lamsol_df = pd.read_csv(lamsol_filepath, delimiter=' ', engine='python', header=None)
 wavelengths, dispersion = illustrate_dispersion([600, 650, 700], lamsol_filepath, nlens=108, output_directory=None)
 
-# %%
-# Section: Lenslet trace positions vs wavelength
+# =============================================================
+# %% Section: Lenslet trace positions vs wavelength
+# =============================================================
+
 from crispy.tools.wavecal import transform
 
 order = 3
@@ -51,9 +54,15 @@ ax.set_title(f'PSF Position vs. Wavelength at Lenslet ({lenslet_idx + nlens // 2
 ax.legend()
 fig.tight_layout()
 
-# %%
-# Section: Test coefficient interpolation utility
+# =============================================================
+# %% Section: Test coefficient interpolation utility
+# =============================================================
+
 from crispy.tools.wavecal import interpolate_lamsol_wavelengths
+
+# TODO: Revisit crispy.tools.locate_psflets.PSFLets.return_locations() here.
+# It may already cover some of the later lamsol interpolation/position analysis,
+# and is worth scrutinizing before extending the custom dispersion workflow further.
 
 # Test the polynomial interpolation helper and return a lamsol-like DataFrame.
 target_wavelengths = [605.0, 632.5, 677.5]

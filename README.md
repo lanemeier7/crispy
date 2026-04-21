@@ -141,6 +141,12 @@ image = Image(data=detector_data)
 spectrum, variance = testOptExt(par, image, lensX=0, lensY=0)
 ```
 
+### Wavelength Solution Files
+The detector mapping stored in `lamsol.dat` is documented in the Sphinx docs as
+`Wavelength Solution Files`. That page explains the column layout, coefficient
+ordering, lenslet index convention, and the recommended APIs for converting a
+given lenslet index and wavelength into detector `(x, y)` coordinates.
+
 ---
 
 ## 📁 **Project Structure**
@@ -197,6 +203,7 @@ Tests are organized by category with descriptive markers:
 ## 🌐 **Documentation**
 
 - **📚 Full Documentation**: [https://mjrfringes.github.io/crispy/index.html](https://mjrfringes.github.io/crispy/index.html)
+- **🌈 Wavelength Solution Format**: build the docs locally and open the `Wavelength Solution Files` page for `lamsol.dat` details
 - **🔧 Developer Guide**: See `CLAUDE.md` for development workflow
 - **📓 Example Notebooks**: Located in `docs/source/notebooks/`
 

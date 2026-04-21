@@ -24,6 +24,7 @@ IFS Simulator
 
    notebooks/Introduction
    notebooks/Starting_From_Scratch_Doc
+   wavelength_solution
    notebooks/OS5_Scenario_doc
    notebooks/RDI_sensitivity_study
    notebooks/Analytical_Model_Spectrum_Cleaned

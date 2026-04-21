@@ -1070,7 +1070,31 @@ def buildcalibrations(
     This function generates all the files required to process IFS cubes:
     lamsol.dat: contains a list of the wavelengths and the polynomial coefficients that
                 describe the X,Y positions of all lenslets on the detector as a function
-                of lenslet position on the lenslet array.
+                                of lenslet position on the lenslet array.
+
+                                File format:
+                                - column 0 is wavelength in nm
+                                - columns 1..N are the polynomial coefficients for detector X followed by
+                                    the polynomial coefficients for detector Y
+                                - for polynomial order p, the number of coefficients after the wavelength
+                                    column is (p + 1) * (p + 2)
+                                - within the X block and within the Y block, terms are ordered by increasing
+                                    powers of lenslet-array x and y subject to ix + iy <= p
+
+                                For order=3, the coefficient order within each coordinate block is:
+                                1, y, y^2, y^3, x, x*y, x*y^2, x^2, x^2*y, x^3
+
+                                If i and j denote lenslet indices on the centered lenslet grid, then the row
+                                at wavelength lam defines:
+
+                                        X(i, j; lam) = sum a[ix, iy](lam) * i^ix * j^iy
+                                        Y(i, j; lam) = sum b[ix, iy](lam) * i^ix * j^iy
+
+                                The low-level implementation of this ordering lives in
+                                crispy.tools.locate_psflets.transform, and the preferred high-level API for
+                                arbitrary wavelengths is crispy.tools.locate_psflets.PSFLets.return_locations.
+
+                                For a fuller prose description, see docs/source/wavelength_solution.rst.
     polychromekeyRXX.fits:  where XX is replaced by the spectral resolution defined in the
                             parameters file. This is a multi-extension fits file with:
                             - a list of the central wavelengths at which the final cube will be reduced to
@@ -1574,8 +1598,11 @@ def derivative_of_lamsol_at_wavelength(x_lens_ind, y_lens_ind, lamsol_df, wavele
 
     Returns:
     --------
-    coefficient_derivatives : list
-        Derivatives of each coefficient at the specified wavelength
+    dx_dlambda : array
+        The derivative of the x-coefficients with respect to wavelength evaluated at the specified wavelength
+    dy_dlambda : array
+        The derivative of the y-coefficients with respect to wavelength evaluated at the specified wavelength
+
     """
     # Intelligently guess the order of the polynomial fit from the number of coefficients 
     # Remember that the 0th column is not a coefficient, but a wavelength.
