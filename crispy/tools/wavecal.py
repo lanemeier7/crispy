@@ -76,7 +76,7 @@ def do_inspection(par, image, xpos, ypos, lam, display_plot=False):
         circle = plt.Circle(val, 3, color='blue', lw=1, alpha=0.5)
         ax.add_artist(circle)
     # aps.plot(ax=ax,color='blue', lw=1, alpha=0.5)
-    fig.savefig(os.path.join(par.wavecalDir, 'inspection_%3d.png' % (lam)), dpi=300)
+    fig.savefig(os.path.join(par.outdir, 'inspection_%3d.png' % (lam)), dpi=300)
 
     if display_plot:
         plt.show(block=False)
@@ -1018,6 +1018,8 @@ def buildcalibrations(
     makehiresPolychrome: Boolean
             Whether or not to build a polychrome cube at a high spatial resolution for future
             subpixel interpolations
+    outdir: string
+            Directory in which to save the generated files
     savehiresimages: Boolean
             Whether to save fits files with the high-res PSFLets
     borderpix:  int
@@ -1110,7 +1112,10 @@ def buildcalibrations(
                     in the detector.
 
     """
-    outdir = par.wavecalDir  # Directory to save wavelength calibration files
+    if par.outdir is not None:
+        outdir = par.outdir
+    else:
+        outdir = par.wavecalDir  # Directory to save wavelength calibration files
     if filelist is None:
         if par.filelist is None:
             raise ValueError("No filelist provided and par.filelist is None")
@@ -1703,11 +1708,10 @@ def interpolate_lamsol_wavelengths(lamsol_df, target_wavelengths=None, lamsol_fi
 
 # Display a plot of dispersion values at a few different wavelengths
 def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_directory=None, lamsol_fit_order=4,
-                          sensor_dimensions=(1200, 800)):
+                          sensor_dimensions=[1200, 800], lenslets_to_plot=None):
     """
-    Generate plots illustrating the dispersion map at specified wavelengths, 
-    a plot of dispersion vs. wavelength for a lenslet in the middle of the array, 
-    and a map of trace length (over a specified wavelength range) across the detector. 
+    Generate plots illustrating the dispersion map at specified wavelengths,
+    and a plot of dispersion vs. wavelength for one or more user-specified lenslets.
 
     Parameters:
     -----------
@@ -1723,11 +1727,18 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         Order of the polynomial fit to use for the lamsol coefficients
     sensor_dimensions : tuple, optional
         Dimensions of the sensor in pixels, used for plotting boundaries of the detector
+    lenslets_to_plot : list[list[int, int]], optional
+        Lenslet coordinates to use for the dispersion-vs-wavelength plot, in the form
+        [[x1, y1], [x2, y2], ...] where [0, 0] corresponds to the center lenslet.
+        If None, defaults to [[0, 0]].
     
 
     Returns:
     --------
-    None
+    tuple[np.ndarray, np.ndarray | dict]
+        Wavelength array and dispersion values. If one lenslet is provided, returns
+        a 1D dispersion array for backward compatibility. If multiple lenslets are
+        provided, returns a dictionary keyed by (x_lenslet, y_lenslet).
     """
     # Read in the lamsol data file
     lamsol_df = pd.read_csv(lamsol_filepath, delimiter=' ', engine='python', header=None)
@@ -1778,38 +1789,52 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
             filename = os.path.join(output_directory, f'dispersion_map_{wavelength}nm.png')
             fig.savefig(filename, dpi=300, bbox_inches='tight')
 
-    # Display a plot of dispersion vs. wavelength for a lenslet in the middle of the array
-    dispersion_array = []
-    lenslet_idx = 0 # The middle lenslet index
+    if lenslets_to_plot is None:
+        lenslets_to_plot = [[0, 0]]
+
+    lenslet_keys = [tuple(lenslet_pair) for lenslet_pair in lenslets_to_plot]
+    dispersion_by_lenslet = {lenslet_key: [] for lenslet_key in lenslet_keys}
+
     for wavelength in lamsol_df[0]:
-        dx_dlambda, dy_dlambda = derivative_of_lamsol_at_wavelength(lenslet_idx, lenslet_idx, lamsol_df, wavelength, lamsol_fit_order=lamsol_fit_order)
-        dispersion_nm_per_pix = 1 / np.sqrt(dx_dlambda**2 + dy_dlambda**2)
-        dispersion_array.append(dispersion_nm_per_pix)
+        for lenslet_key in lenslet_keys:
+            lenslet_x, lenslet_y = lenslet_key
+            if not (-nlens // 2 <= lenslet_x <= nlens // 2 - 1 and -nlens // 2 <= lenslet_y <= nlens // 2 - 1):
+                raise ValueError(
+                    f"Lenslet {list(lenslet_key)} is out of bounds for nlens={nlens}. "
+                    f"Allowed lenslet coordinates are [{-nlens // 2}, {nlens // 2 - 1}] on each axis."
+                )
+
+            dx_dlambda, dy_dlambda = derivative_of_lamsol_at_wavelength(
+                lenslet_x,
+                lenslet_y,
+                lamsol_df,
+                wavelength,
+                lamsol_fit_order=lamsol_fit_order
+            )
+            dispersion_nm_per_pix = 1 / np.sqrt(dx_dlambda**2 + dy_dlambda**2)
+            dispersion_by_lenslet[lenslet_key].append(dispersion_nm_per_pix)
+
     fig, ax = plt.subplots(figsize=(5, 4))
-    ax.plot(lamsol_df[0], dispersion_array)
+    for lenslet_key in lenslet_keys:
+        ax.plot(
+            lamsol_df[0],
+            dispersion_by_lenslet[lenslet_key],
+            label=f'Lenslet {list(lenslet_key)}'
+        )
     ax.set_xlabel('Wavelength (nm)')
     ax.set_ylabel('Dispersion (nm/pixel)')
-    ax.set_title(f'Dispersion vs. Wavelength at Lenslet ({lenslet_idx + nlens // 2}, {lenslet_idx + nlens // 2})')
-    ax.grid()
+    ax.set_title('Dispersion vs. Wavelength')
+    ax.grid(True, alpha=0.3)
+    if len(lenslet_keys) > 1:
+        legend = ax.legend()
+        legend.set_zorder(1000)
     fig.tight_layout()
-    
-    # Display a plot of PSF position vs wavelength for a single lenslet, with the best-fit polynomial overlaid
-    lenslet_idx = 0 # The middle lenslet index
-    x_positions = []
-    y_positions = []
-    for wavelength in lamsol_df[0]:
-        _coefficients_for_transformation = lamsol_df[lamsol_df[0] == wavelength].values[0][1:]
-        x_transformed, y_transformed = transform(x_lens_ind, y_lens_ind, order=order, coef=_coefficients_for_transformation)
-        x_positions.append(x_transformed[lenslet_idx, lenslet_idx])
-        y_positions.append(y_transformed[lenslet_idx, lenslet_idx])
-    separations = np.sqrt((np.array(x_positions) - x_positions[0])**2 + (np.array(y_positions) - y_positions[0])**2)
-    fig, ax = plt.subplots(figsize=(5, 4))
-    ax.scatter(lamsol_df[0], separations, label='Distance along trace (pixels)')
-    ax.set_xlabel('Wavelength (nm)')
-    ax.set_ylabel('Separation (pixels)')
-    ax.set_title(f'PSF Position vs. Wavelength at Lenslet ({lenslet_idx + nlens // 2}, {lenslet_idx + nlens // 2})')
-    ax.legend()
-    fig.tight_layout()
-    
-    
-    return lamsol_df[0].values, dispersion_array
+
+    if len(lenslet_keys) == 1:
+        return lamsol_df[0].values, np.array(dispersion_by_lenslet[lenslet_keys[0]])
+
+    dispersion_by_lenslet = {
+        lenslet_key: np.array(dispersion_values)
+        for lenslet_key, dispersion_values in dispersion_by_lenslet.items()
+    }
+    return lamsol_df[0].values, dispersion_by_lenslet
