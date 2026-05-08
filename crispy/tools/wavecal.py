@@ -1829,6 +1829,10 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         legend = ax.legend()
         legend.set_zorder(1000)
     fig.tight_layout()
+    
+    if output_directory is not None:
+        filename = os.path.join(output_directory, f'dispersion_vs_wavelength.png')
+        fig.savefig(filename, dpi=300, bbox_inches='tight')
 
     if len(lenslet_keys) == 1:
         return lamsol_df[0].values, np.array(dispersion_by_lenslet[lenslet_keys[0]])
