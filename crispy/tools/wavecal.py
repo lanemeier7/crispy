@@ -1102,14 +1102,16 @@ def buildcalibrations(
                             - a list of the central wavelengths at which the final cube will be reduced to
                             - an array of the X positions of all lenslets
                             - an array of the Y positions of all lenslets
-                            - an array of booleans indicating whether that lenslet is good or not
-                            (e.g. when it is outside of the detector area)
+                            - an array of booleans indicating whether that lenslet is good or not (e.g. when it is outside of the detector area)
+                            NOTE: Seems to have a lot of redundancies with PSFLoc.fits. 
     polychromeRXX.fits: 3D arrays of size num_wavelengths x Npix x Npix with maps of the PSFLets put in their correct
                         positions for each wavelength bins that we want in the output cube. Each PSFLet
                         in each wavelength slice is used for least-squares fitting.
     hiresPolychromeRXX.fits: same as polychromeRXX.fits but this time using the high-resolution PSFLets
-    PSFLoc.fits:    nsubarr x nsubarr array of 2D high-resolution PSFLets at each location
-                    in the detector.
+    PSFLoc.fits:    A multi-extension fits file that gives:
+                - A list of the central wavelengths for each bin of each microspectra
+                - the X and Y positions of all lenslets on the detector at each central bin wavelength
+                - a boolean array indicating whether each lenslet is good or not (e.g. when it is outside of the detector area)
 
     """
     if par.outdir is not None:
@@ -1517,7 +1519,11 @@ def buildcalibrations(
     outkey.append(fits.PrimaryHDU(np.asarray(xpos)))
     outkey.append(fits.PrimaryHDU(np.asarray(ypos)))
     outkey.append(fits.PrimaryHDU(np.asarray(good).astype(np.uint8)))
-    outkey.writeto(f"{os.path.join(outdir, 'polychromekeyR{par.R}.fits')}", overwrite=True)
+    if par.R is not None:
+        filename = os.path.join(outdir, f'polychromekeyR{par.R}.fits')
+    else:
+        filename = os.path.join(outdir, 'polychromekey.fits')
+    outkey.writeto(filename, overwrite=True)
 
     if makehiresPolychrome:
         log.info('Making high-resolution polychrome cube (can use lots of memory)')
