@@ -1762,7 +1762,10 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
     x_lens_ind = np.arange(-nlens // 2, nlens // 2)
     x_lens_ind, y_lens_ind = np.meshgrid(x_lens_ind, x_lens_ind)
 
+    #########################################################################
     # Display a dispersion map at each wavelength of interest
+    #########################################################################
+
     for wavelength in wavelengths_to_plot:
         # Determine the x/y coordinates of the lenslets on the detector, at the wavelength closest to the desired wavelength
         _coefficients_for_transformation = lamsol_df.loc[(lamsol_df[0] - wavelength).abs().idxmin()].values[1:]
@@ -1795,6 +1798,9 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
             filename = os.path.join(output_directory, f'dispersion_map_{wavelength}nm.png')
             fig.savefig(filename, dpi=300, bbox_inches='tight')
 
+    #########################################################################
+    # Plot dispersion vs. wavelength for one or more user-specified lenslets
+    #########################################################################
     if lenslets_to_plot is None:
         lenslets_to_plot = [[0, 0]]
 
@@ -1835,7 +1841,41 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         legend = ax.legend()
         legend.set_zorder(1000)
     fig.tight_layout()
+    
+    if output_directory is not None:
+        filename = os.path.join(output_directory, f'dispersion_vs_wavelength.png')
+        fig.savefig(filename, dpi=300, bbox_inches='tight')
 
+    #########################################################################
+    # Plot spectral trace length vs lenslet by evaluating the distance between the shortest and longest wavelengths
+    #########################################################################
+    wavelength_min = lamsol_df[0].min()
+    wavelength_max = lamsol_df[0].max()
+    x_positions_low, y_positions_low = transform(x_lens_ind, y_lens_ind, order=order, coef=lamsol_df.loc[lamsol_df[0] == wavelength_min].values[0, 1:])
+    x_positions_high, y_positions_high = transform(x_lens_ind, y_lens_ind, order=order, coef=lamsol_df.loc[lamsol_df[0] == wavelength_max].values[0, 1:])
+    trace_lengths = np.sqrt((x_positions_high - x_positions_low)**2 + (y_positions_high - y_positions_low)**2)
+    
+    fig, ax = plt.subplots(figsize=(6, 5))
+    scatter = ax.scatter(x_positions_low, y_positions_low, c=trace_lengths, s=20)
+    cbar = fig.colorbar(scatter, ax=ax)
+    cbar.set_label('Trace Length (pixels)')
+    ax.set_xlim(0, sensor_dimensions[0])
+    ax.set_ylim(0, sensor_dimensions[1])
+    ax.set_aspect('equal')
+    ax.set_xlabel('Detector X (pixels)')
+    ax.set_ylabel('Detector Y (pixels)')
+    ax.set_title(f'Spectral Trace Length\n[{wavelength_min} - {wavelength_max} nm]')
+    fig.tight_layout()
+    
+    if output_directory is not None:
+        filename = os.path.join(output_directory, f'spectral_trace_length_map.png')
+        fig.savefig(filename, dpi=300, bbox_inches='tight')
+    
+    #########################################################################
+    # Return final dispersion values for each lenslet, along with the wavelength array
+    #########################################################################
+    plt.show(block=False)
+    
     if len(lenslet_keys) == 1:
         return lamsol_df[0].values, np.array(dispersion_by_lenslet[lenslet_keys[0]])
 
