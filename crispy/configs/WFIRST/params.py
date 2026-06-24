@@ -21,8 +21,8 @@ class Params(object):
         self.prefix = os.path.join(self.codeRoot, 'ReferenceFiles')
         self.exportDir = os.path.join(self.codeRoot, 'SimResults')
         self.unitTestsOutputs = os.path.join(self.codeRoot, 'unitTestsOutputs')
-        # self.wavecalDir = os.path.join(self.prefix, 'wavecalR50_770')
-        self.wavecalDir = os.path.join(self.prefix, 'testing')
+        # self.wavecalDir = os.path.join(self.prefix, 'wavecalR50_770/')
+        self.wavecalDir = os.path.join(self.prefix, 'testing/')  # trailing slash required: consumers concatenate filenames directly
 #         self.wavecalName = 'simCalCube.fits'
         self.filelist = None
         self.lamlist = None
