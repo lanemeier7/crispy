@@ -896,9 +896,9 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
     # Convolve the image with a Gaussian, apply a filter, then centroid on the PSFLets.
     #############################################################
 
-    x = np.arange(-1 * int(3 * sig + 1), int(3 * sig + 1) + 1)
-    x, y = np.meshgrid(x, x)
-    gaussian = np.exp(-(x**2 + y**2) / (2 * sig**2))
+    kernel_x = np.arange(-1 * int(3 * sig + 1), int(3 * sig + 1) + 1)
+    kernel_x, kernel_y = np.meshgrid(kernel_x, kernel_x)
+    gaussian = np.exp(-(kernel_x**2 + kernel_y**2) / (2 * sig**2))
 
 #     if mask is None:
 #         unfiltered = signal.convolve2d(inImage.data, gaussian, mode='same')
@@ -912,14 +912,14 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
     filtered = ndimage.interpolation.spline_filter(unfiltered)
 
     #############################################################
-    # x, y: Grid of lenslet IDs, Lenslet (0, 0) will be referred to as the center.
+    # lenslet_ind_x/y: Grid of lenslet IDs, Lenslet (0, 0) will be referred to as the center.
     #############################################################
 
     # gridfrac = 10
     ydim, xdim = inImage.data.shape
     # x = np.arange(-(ydim//gridfrac), ydim//gridfrac + 1)
-    x = np.arange(-nlens // 2, nlens // 2)
-    x, y = np.meshgrid(x, x)
+    lenslet_ind_x = np.arange(-nlens // 2, nlens // 2)
+    lenslet_ind_x, lenslet_ind_y = np.meshgrid(lenslet_ind_x, lenslet_ind_x)
 
     #############################################################
     # Set up polynomial coefficients, convert from lenslet
@@ -943,6 +943,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         subfiltered = ndimage.interpolation.spline_filter(unfiltered[(unfiltered.shape[0] // 2 - subshape // 2 -1):unfiltered.shape[0] // 2 + subshape // 2, 
                                                         (unfiltered.shape[1] // 2 - subshape // 2 -1):unfiltered.shape[1] // 2 + subshape // 2])
 
+
         # Iterate over a grid of offsets to find the best initial guess for the transformation coefficients
         for ix in np.arange(-(scale+1)//2, (scale+1)//2, 0.5):
             for iy in np.arange(-(scale+2)//2, (scale+2)//2, 0.5):
@@ -951,7 +952,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
                 coef = initcoef(order=polyorder, x0=ix + (subshape / 2),
                                 y0=iy + (subshape / 2), scale=scale, phi=phi)
 
-                correlation_score_current = corrval(coef, x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s],
+                correlation_score_current = corrval(coef, lenslet_ind_x[_s:-_s, _s:-_s], lenslet_ind_y[_s:-_s, _s:-_s],
                                  subfiltered, polyorder, trimfrac, show_plots=False)
                 if correlation_score_current < correlation_score_best:
                     correlation_score_best = correlation_score_current
@@ -962,7 +963,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         for phi_temp in np.arange(phi - 0.02, phi + 0.02, 0.005): #0.017 rad = 1 degrees
             coef = initcoef(order=polyorder, x0=coef_optimized[0],
                             y0=coef_optimized[(polyorder + 1) * (polyorder + 2) // 2], scale=scale, phi=phi_temp)
-            correlation_score_current = corrval(coef, x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s],
+            correlation_score_current = corrval(coef, lenslet_ind_x[_s:-_s, _s:-_s], lenslet_ind_y[_s:-_s, _s:-_s],
                              subfiltered, polyorder, trimfrac, show_plots=False)
             if correlation_score_current < correlation_score_best:
                 correlation_score_best = correlation_score_current
@@ -973,14 +974,14 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         if show_plots:
             fig, ax = plt.subplots(figsize=(6,5))
             ax.imshow(subfiltered, origin='lower', cmap='viridis')
-            _x, _y = transform(x, y, polyorder, coef_optimized)
+            _x, _y = transform(lenslet_ind_x, lenslet_ind_y, polyorder, coef_optimized)
             ax.scatter(_x[_s:-_s, _s:-_s], _y[_s:-_s, _s:-_s], s=10, c='r')
             ax.set_title(f'PSFlet Locations After Initial \nTranslation/Rotation Optimization')
             plt.show(block=False)
             plt.pause(0.1)
 
         log.info("Performing initial optimization of PSFlet location transformation coefficients for frame " + inImage.filename)
-        res = optimize.minimize(corrval, coef_optimized, args=(x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s], 
+        res = optimize.minimize(corrval, coef_optimized, args=(lenslet_ind_x[_s:-_s, _s:-_s], lenslet_ind_y[_s:-_s, _s:-_s], 
                                 subfiltered, polyorder, trimfrac), method='Powell')
         coef_optimized = res.x
         
@@ -988,9 +989,9 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         if show_plots:
             fig, ax = plt.subplots(figsize=(6,5))
             ax.imshow(unfiltered, origin='lower', cmap='viridis')
-            _x, _y = transform(x, y, polyorder, coef_optimized)
+            _x, _y = transform(lenslet_ind_x, lenslet_ind_y, polyorder, coef_optimized)
             ax.scatter(_x, _y, s=10, c='r')
-            ax.set_title('PSFlet Locations After Full Initial Optimization')
+            ax.set_title(f'PSFlet Locations After Full Initial Optimization\n(pre-shift)')
             plt.show(block=False)
             plt.pause(0.1)
 
@@ -1006,7 +1007,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         if show_plots:
             fig, ax = plt.subplots(figsize=(6,5))
             ax.imshow(unfiltered, origin='lower', cmap='viridis')
-            _x, _y = transform(x, y, polyorder, coef_optimized)
+            _x, _y = transform(lenslet_ind_x, lenslet_ind_y, polyorder, coef_optimized)
             ax.scatter(_x, _y, s=10, c='r')
             ax.set_title('PSFlet Locations After Full Initial Optimization')
             plt.show(block=False)
