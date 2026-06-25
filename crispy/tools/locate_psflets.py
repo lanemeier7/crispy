@@ -497,9 +497,9 @@ def initcoef(order, scale, phi, x0=0, y0=0):
     order: int
         The polynomial order of the grid distortion
     scale: float
-        The linear separation in pixels of the PSFlets. Default 13.88.
+        The linear separation in pixels of the PSFlets.
     phi:   float
-        The pitch angle of the lenslets.  Default atan(2)
+        The pitch angle of the lenslets.
     x0:    float
         x offset to apply to the central pixel. Default 0
     y0:    float
@@ -792,16 +792,17 @@ def corrval(coef, x, y, input_image, order, trimfrac=0.1, show_plots=False):
         im = ax.imshow(input_image, cmap='viridis')
         ax.scatter(_x, _y, c='r', s=1)
         ax.set_title(f"Coefficients:\n{[f'{c:.1f}' for c in coef]}", fontsize=10)
-        ax.set_xlim(0, input_image.shape[1])
-        ax.set_ylim(0, input_image.shape[0])
+        # ax.set_xlim(0, input_image.shape[1])
+        # ax.set_ylim(0, input_image.shape[0])
+        # Add a margin of 1%
+        ax.margins(0.01)
         fig.colorbar(im)
         # Add score textbox
         props = dict(boxstyle='round', facecolor='white', alpha=1.0)
         ax.text(0.95, 0.95, f'Score: {score:.2f}', transform=ax.transAxes,
                 verticalalignment='top', horizontalalignment='right', bbox=props)
         fig.tight_layout()
-        plt.show()
-        plt.close('all')
+        plt.show(block=False)
 
     return score
 
@@ -832,7 +833,8 @@ def corrval(coef, x, y, input_image, order, trimfrac=0.1, show_plots=False):
 
 
 def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
-                  phi=np.arctan2(1.926, -1), scale=15.02, nlens=108, finesearch=3):
+                  phi=np.arctan2(1.926, -1), scale=15.02, nlens=108, finesearch=3,
+                  show_plots=False):
     """
     function locatePSFlets takes an Image class, assumed to be a
     monochromatic grid of spots with read noise and shot noise, and
@@ -842,7 +844,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
 
     Parameters
     ----------
-    imImage: Image class
+    inImage: Image class
         Assumed to be a monochromatic grid of spots
     polyorder: float
         order of the polynomial coordinate transformation. Default 2.
@@ -934,30 +936,81 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
 
         log.info("Initializing PSFlet location transformation coefficients")
         correlation_score_best = 0  # Initialize best correlation value
-        subshape = xdim // 3  # Define size of subimage for initial optimization
-        _s = x.shape[0] // 3  # Define slice size for subsampling lenslet grid
-        subfiltered = ndimage.interpolation.spline_filter(unfiltered[subshape:-subshape, subshape:-subshape])
+        # subshape = np.min([xdim,ydim]) // 3  # Define size of subimage for initial optimization
+        num_psflets_for_subimage = 20  # Approximately how many PSFlets do we want on each side in the subimage?
+        subshape = int(scale * num_psflets_for_subimage)  # Define size of subimage for initial optimization. 
+        _s = int(1.5 * num_psflets_for_subimage)  # Define slice size for subsampling lenslet grid
+        subfiltered = ndimage.interpolation.spline_filter(unfiltered[(unfiltered.shape[0] // 2 - subshape // 2 -1):unfiltered.shape[0] // 2 + subshape // 2, 
+                                                        (unfiltered.shape[1] // 2 - subshape // 2 -1):unfiltered.shape[1] // 2 + subshape // 2])
 
-        # How did the bounds for this for-loop get determined? Something to do with the ~typical number of pixels between spots in a monochromatic image?
-        for ix in np.arange(-7, 7, 0.5):
-            for iy in np.arange(-9, 9, 0.5):
-                coef = initcoef(order=polyorder, x0=ix + (xdim / 2 - subshape),
-                                y0=iy + (ydim / 2 - subshape), scale=scale, phi=phi)
+        # Iterate over a grid of offsets to find the best initial guess for the transformation coefficients
+        for ix in np.arange(-(scale+1)//2, (scale+1)//2, 0.5):
+            for iy in np.arange(-(scale+2)//2, (scale+2)//2, 0.5):
+                # coef = initcoef(order=polyorder, x0=ix + (xdim / 2 - subshape),
+                #                 y0=iy + (ydim / 2 - subshape), scale=scale, phi=phi)
+                coef = initcoef(order=polyorder, x0=ix + (subshape / 2),
+                                y0=iy + (subshape / 2), scale=scale, phi=phi)
+
                 correlation_score_current = corrval(coef, x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s],
                                  subfiltered, polyorder, trimfrac, show_plots=False)
                 if correlation_score_current < correlation_score_best:
                     correlation_score_best = correlation_score_current
                     coef_current_best = copy.deepcopy(coef)
         coef_optimized = coef_current_best
+        
+        # Iterate over a range of phi values to find the best initial guess for the rotation
+        for phi_temp in np.arange(phi - 0.02, phi + 0.02, 0.005): #0.017 rad = 1 degrees
+            coef = initcoef(order=polyorder, x0=coef_optimized[0],
+                            y0=coef_optimized[(polyorder + 1) * (polyorder + 2) // 2], scale=scale, phi=phi_temp)
+            correlation_score_current = corrval(coef, x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s],
+                             subfiltered, polyorder, trimfrac, show_plots=False)
+            if correlation_score_current < correlation_score_best:
+                correlation_score_best = correlation_score_current
+                coef_current_best = copy.deepcopy(coef)
+        coef_optimized = coef_current_best
+
+        # Display a plot of the PSFlet locations after initial optimization, if desired
+        if show_plots:
+            fig, ax = plt.subplots(figsize=(6,5))
+            ax.imshow(subfiltered, origin='lower', cmap='viridis')
+            _x, _y = transform(x, y, polyorder, coef_optimized)
+            ax.scatter(_x[_s:-_s, _s:-_s], _y[_s:-_s, _s:-_s], s=10, c='r')
+            ax.set_title(f'PSFlet Locations After Initial \nTranslation/Rotation Optimization')
+            plt.show(block=False)
+            plt.pause(0.1)
 
         log.info("Performing initial optimization of PSFlet location transformation coefficients for frame " + inImage.filename)
         res = optimize.minimize(corrval, coef_optimized, args=(x[_s:-_s, _s:-_s], y[_s:-_s, _s:-_s], 
                                 subfiltered, polyorder, trimfrac), method='Powell')
         coef_optimized = res.x
+        
+        # Display a plot of the PSFlet locations after optimization, if desired
+        if show_plots:
+            fig, ax = plt.subplots(figsize=(6,5))
+            ax.imshow(unfiltered, origin='lower', cmap='viridis')
+            _x, _y = transform(x, y, polyorder, coef_optimized)
+            ax.scatter(_x, _y, s=10, c='r')
+            ax.set_title('PSFlet Locations After Full Initial Optimization')
+            plt.show(block=False)
+            plt.pause(0.1)
 
-        coef_optimized[0] += subshape
-        coef_optimized[(polyorder + 1) * (polyorder + 2) // 2] += subshape
+        # Add the subimage offset to the 0th-order coefficients for each axis to account for the fact that we optimized on a subimage rather than the full image
+        # coef_optimized[0] += subshape
+        # coef_optimized[(polyorder + 1) * (polyorder + 2) // 2] += subshape
+        coef_optimized[0] += xdim / 2 - coef_optimized[0]
+        coef_optimized[(polyorder + 1) * (polyorder + 2) // 2] += ydim / 2 - coef_optimized[(polyorder + 1) * (polyorder + 2) // 2]
+        
         log.info('Array origin: {:}'.format((coef_optimized[0], coef_optimized[(polyorder + 1) * (polyorder + 2) // 2])))
+
+        # Display a plot of the PSFlet locations after optimization, if desired
+        if show_plots:
+            fig, ax = plt.subplots(figsize=(6,5))
+            ax.imshow(unfiltered, origin='lower', cmap='viridis')
+            _x, _y = transform(x, y, polyorder, coef_optimized)
+            ax.scatter(_x, _y, s=10, c='r')
+            ax.set_title('PSFlet Locations After Full Initial Optimization')
+            plt.show(block=False)
+            plt.pause(0.1)
 
     #############################################################
     # If we have coefficients from last iteration, assume that we
@@ -988,6 +1041,17 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
 
     coef_optimized = res.x
     log.info(f'Lenslet array origin (pixels): {(coef_optimized[0], coef_optimized[(polyorder + 1) * (polyorder + 2) // 2])}')
+
+    # Display a plot of the PSFlet locations after final optimization, if desired
+    if show_plots:
+        fig, ax = plt.subplots(figsize=(6,5))
+        ax.imshow(unfiltered, origin='lower', cmap='viridis')
+        _x, _y = transform(x, y, polyorder, coef_optimized)
+        ax.scatter(_x, _y, s=10, c='r')
+        ax.set_title('PSFlet Locations After Final Optimization')
+        plt.show(block=False)
+        plt.pause(0.1)
+
 
     if not res.success:
         log.info("WARNING: Optimizing PSFlet location transformation coefficients may have failed for frame " + inImage.filename)
