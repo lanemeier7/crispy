@@ -846,6 +846,132 @@ def corrval(coef, x, y, input_image, order, trimfrac=0.1, show_plots=False, low_
 #     return -s
 
 
+def optimize_coef_from_image(unfiltered, coef, lenslet_ind_x, lenslet_ind_y,
+                             polyorder, scale, trimfrac,
+                             image_fractions=[0.1, 0.3, 0.7], show_plots=False):
+    """
+    Optimize the PSFlet location transformation coefficients by fitting to a
+    sequence of increasingly large centered crops of the full image.
+
+    This avoids a single large jump from a small initial fit (e.g. a central
+    2x2 PSFlet fit) straight to the full-size image. Instead, each crop is fit
+    in turn, with the result of one crop seeding the next, so every L-BFGS-B
+    call starts from a nearly-correct guess. All fits use low_orders_only=False.
+
+    Coordinates are handled relative to the center of each crop. For the first
+    (smallest) crop, the translation terms (x0, y0) are established by rastering
+    a grid of offsets and keeping the best correlation score. When stepping up
+    to a larger crop, the translation terms are shifted by the difference in
+    half-crop sizes. After the final crop, the translation terms are converted
+    to full-image coordinates before returning.
+
+    Parameters
+    ----------
+    unfiltered: ndarray
+        Full-size image (Gaussian-convolved but not spline-filtered). Each crop
+        is spline-filtered here, since corrval uses prefilter=False.
+    coef: list of floats
+        Initial guess of the coefficients (typically from a central 2x2 fit,
+        providing good scale/rotation/shear terms).
+    lenslet_ind_x: ndarray
+        Full grid of lenslet x indices.
+    lenslet_ind_y: ndarray
+        Full grid of lenslet y indices.
+    polyorder: int
+        Order of the polynomial coordinate transformation.
+    scale: float
+        Scale factor for the PSFlet grid, used for raster range and bounds.
+    trimfrac: float
+        Fraction of lenslet outliers to trim in corrval.
+    image_fractions: list of floats
+        Ascending fractional sizes of the full image to fit to in sequence.
+        Default [0.1, 0.3, 0.7].
+    show_plots: bool
+        If True, display the crop with the overlaid PSFlet scatterplot after
+        each fit in its own figure. Default False.
+
+    Returns
+    -------
+    coef: ndarray
+        Best-fit polynomial coefficients, with translation terms expressed in
+        full-image coordinates.
+    """
+    ydim, xdim = unfiltered.shape
+    x0_term = 0
+    y0_term = (polyorder + 1) * (polyorder + 2) // 2
+    coef = copy.deepcopy(coef)
+
+    nlens_full = lenslet_ind_x.shape[0]
+    prev_w, prev_h = None, None
+    for i,frac in enumerate(image_fractions):
+        w = int(frac * xdim)
+        h = int(frac * ydim)
+        cropped_image = ndimage.interpolation.spline_filter(
+            unfiltered[(ydim // 2 - h // 2):(ydim // 2 + h // 2),
+                       (xdim // 2 - w // 2):(xdim // 2 + w // 2)])
+
+        # Use the central fraction of the lenslet grid to match the image crop. This saves fitting time and minimizes odds of finding redundant solutions.
+        nlens_sub = int(frac * nlens_full)
+        lc = nlens_full // 2
+        lenslet_ind_x_sub = lenslet_ind_x[lc - nlens_sub // 2:lc + nlens_sub // 2,
+                                           lc - nlens_sub // 2:lc + nlens_sub // 2]
+        lenslet_ind_y_sub = lenslet_ind_y[lc - nlens_sub // 2:lc + nlens_sub // 2,
+                                           lc - nlens_sub // 2:lc + nlens_sub // 2]
+
+        if prev_w is None:
+            # First (smallest) cropped_image: raster a grid of translation offsets to
+            # establish a robust x0/y0 around the crop center.
+            log.info("Rastering through translation coefficients on initial image fraction")
+            correlation_score_best = 0
+            coef_current_best = copy.deepcopy(coef)
+            for ix in np.arange(-(scale + 1) // 2, (scale + 1) // 2, 0.5):
+                for iy in np.arange(-(scale + 2) // 2, (scale + 2) // 2, 0.5):
+                    coef[x0_term] = ix + (w / 2)
+                    coef[y0_term] = iy + (h / 2)
+                    correlation_score_current = corrval(coef, lenslet_ind_x_sub, lenslet_ind_y_sub,
+                                                         cropped_image, polyorder, trimfrac, show_plots=False)
+                    if correlation_score_current < correlation_score_best:
+                        correlation_score_best = correlation_score_current
+                        coef_current_best = copy.deepcopy(coef)
+            coef = coef_current_best
+        else:
+            # Stepping up to a larger crop: shift translation terms by the
+            # difference in half-crop sizes.
+            coef[x0_term] += (w - prev_w) / 2
+            coef[y0_term] += (h - prev_h) / 2
+
+        # Constrain the translation terms to +/-scale of the current value.
+        bounds = [(None, None)] * len(coef)
+        bounds[x0_term] = (coef[x0_term] - scale, coef[x0_term] + scale)
+        bounds[y0_term] = (coef[y0_term] - scale, coef[y0_term] + scale)
+        log.info(f'Fitting coefficients for the central {frac}/1.0 of the image')
+        res = optimize.minimize(corrval, coef, args=(lenslet_ind_x_sub, lenslet_ind_y_sub,
+                                cropped_image, polyorder, trimfrac, False, False),
+                                method='L-BFGS-B', bounds=bounds)
+        coef = res.x.copy()
+
+        if show_plots:
+            fig, ax = plt.subplots(figsize=(6, 5))
+            ax.imshow(cropped_image, origin='lower', cmap='viridis')
+            _x, _y = transform(lenslet_ind_x_sub, lenslet_ind_y_sub, polyorder, coef)
+            ax.scatter(_x, _y, s=5, c='r')
+            ax.set_title(f'PSFlet Locations After Fit on Central {frac}/1.0 of Image')
+            ax.set_xlim(0, cropped_image.shape[1])
+            ax.set_ylim(0, cropped_image.shape[0])
+            ax.set_xlabel('X (pixels)')
+            ax.set_ylabel('Y (pixels)')
+            plt.show(block=False)
+            plt.pause(0.1)
+
+        prev_w, prev_h = w, h
+
+    # Convert the translation terms from final-crop coordinates to full-image coordinates.
+    coef[x0_term] += xdim / 2 - prev_w / 2
+    coef[y0_term] += ydim / 2 - prev_h / 2
+
+    return coef
+
+
 def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
                   phi=np.arctan2(1.926, -1), scale=15.02, nlens=108, finesearch=3,
                   show_plots=False):
@@ -952,14 +1078,10 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         correlation_score_best = 0  # Initialize best correlation value
         num_psflets_for_subimage = int(nlens // 2.5)   # Approximately how many PSFlets do we want on each side in the subimage?
         subshape = int(scale * num_psflets_for_subimage)  # Define size of subimage for initial optimization. 
-        subfiltered = ndimage.interpolation.spline_filter(unfiltered[(ydim // 2 - subshape // 2 - 1):ydim // 2 + subshape // 2, 
+        subfiltered = ndimage.interpolation.spline_filter(unfiltered[(ydim // 2 - subshape // 2 - 1):ydim // 2 + subshape // 2,
                                                         (xdim // 2 - subshape // 2 - 1):xdim // 2 + subshape // 2])
-        lenslet_ind_x_sub = lenslet_ind_x[(nlens // 2 - num_psflets_for_subimage // 2):(nlens // 2 + num_psflets_for_subimage // 2),
-                                          (nlens // 2 - num_psflets_for_subimage // 2):(nlens // 2 + num_psflets_for_subimage // 2)]
-        lenslet_ind_y_sub = lenslet_ind_y[(nlens // 2 - num_psflets_for_subimage // 2):(nlens // 2 + num_psflets_for_subimage // 2),
-                                          (nlens // 2 - num_psflets_for_subimage // 2):(nlens // 2 + num_psflets_for_subimage // 2)]
-        
-        
+
+
         #########################################################
         # Fit central 2x2 PSFlets
         #########################################################
@@ -986,7 +1108,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
             
         # Make a grid of 2x2 lenslets and use the corrval() function to optimize the translation coefficients for the PSFlet locations in subfiltered_sub
         lenslet_ind_x_temp = np.arange(2)
-        lenslet_ind_x_temp, lenslet_ind_y_temp = np.meshgrid(lenslet_ind_x_temp, lenslet_ind_x_temp)
+        lenslet_ind_x_temp, lenslet_ind_y_temp = np.meshgrid(lenslet_ind_x_temp, lenslet_ind_x_temp)  # Re-using the x-array for this operation since the lenslet array is square
         coef = initcoef(order=polyorder, x0=peaks['x_peak'].min(), y0=peaks['y_peak'][peaks['x_peak'].argmin()], scale=scale, phi=phi)  # Define an initial set of coefficients with a reasonable guess for x0/y0
         res = optimize.minimize(corrval, coef, args=(lenslet_ind_x_temp, lenslet_ind_y_temp,
                 subfiltered_sub, polyorder, trimfrac, False, True), method='Powell')
@@ -1007,67 +1129,15 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         # Fit subfiltered image
         ###############################################
         
-        # Iterate over a grid of offsets to find the best initial guess for the transformation coefficients
-        log.info("Rastering through translation coefficients for frame " + inImage.filename)
-        for ix in np.arange(-(scale+1)//2, (scale+1)//2, 0.5):
-            for iy in np.arange(-(scale+2)//2, (scale+2)//2, 0.5):
-                # coef = initcoef(order=polyorder, x0=ix + (subshape / 2) + scale,
-                #                 y0=iy + (subshape / 2) + scale, scale=scale, phi=phi)
-                coef_optimized[0] = ix + (subshape / 2) + scale
-                coef_optimized[(polyorder + 1) * (polyorder + 2) // 2] = iy + (subshape / 2) + scale
-                correlation_score_current = corrval(coef_optimized, lenslet_ind_x_sub, lenslet_ind_y_sub,
-                                 subfiltered, polyorder, trimfrac, show_plots=False)
-                if correlation_score_current < correlation_score_best:
-                    correlation_score_best = correlation_score_current
-                    coef_current_best = copy.deepcopy(coef_optimized)
-        coef_optimized = coef_current_best
+        # Fit the coefficients on a sequence of increasingly large image fractions,
+        # stepping up gradually rather than jumping straight to the full image.
+        log.info("Optimizing PSFlet location transformation coefficients over image fractions for frame " + inImage.filename)
+        coef_optimized = optimize_coef_from_image(
+            unfiltered, coef_optimized, lenslet_ind_x, lenslet_ind_y,
+            polyorder, scale, trimfrac,
+            image_fractions=[0.1, 0.3, 0.5, 0.7, 0.9], show_plots=show_plots)
 
-        # Display a plot of the PSFlet locations after rastering through x0/y0 offsets, if desired
-        if show_plots:
-            fig, ax = plt.subplots(figsize=(6,5))
-            ax.imshow(subfiltered, origin='lower', cmap='viridis')
-            _x, _y = transform(lenslet_ind_x_sub, lenslet_ind_y_sub, polyorder, coef_optimized)
-            ax.scatter(_x, _y, s=10, c='r')
-            ax.set_title(f'PSFlet Locations After Initial \nTranslation Optimization')
-            plt.show(block=False)
-            plt.pause(0.1)
-
-        log.info("Performing initial optimization of PSFlet location transformation coefficients for frame " + inImage.filename)
-        # Set up bounds for translation coefficients (x0 and y0) to constrain them ±scale from current value
-        x0_term = 0
-        y0_term = (polyorder + 1) * (polyorder + 2) // 2
-        bounds = [(None, None)] * len(coef_optimized)
-        bounds[x0_term] = (coef_optimized[x0_term] - scale, coef_optimized[x0_term] + scale)  # x0: constrain to ±scale
-        bounds[y0_term] = (coef_optimized[y0_term] - scale, coef_optimized[y0_term] + scale)  # y0: constrain to ±scale
-        res = optimize.minimize(corrval, coef_optimized, args=(lenslet_ind_x_sub, lenslet_ind_y_sub,
-                                subfiltered, polyorder, trimfrac, False, False), method='L-BFGS-B', bounds=bounds)
-        coef_optimized = res.x.copy()
-        
-        # Display a plot of the PSFlet locations after low-order optimization, if desired
-        if show_plots:
-            fig, ax = plt.subplots(figsize=(6,5))
-            ax.imshow(subfiltered, origin='lower', cmap='viridis')
-            _x, _y = transform(lenslet_ind_x_sub, lenslet_ind_y_sub, polyorder, coef_optimized)
-            ax.scatter(_x, _y, s=10, c='r')
-            ax.set_title('PSFlet Locations After All Coef. Optimization')
-            plt.show(block=False)
-            plt.pause(0.1)
-
-        # Add the subimage offset to the 0th-order coefficients for each axis to account for the fact that we optimized on a subimage rather than the full image
-        coef_optimized[0] += xdim / 2 - subfiltered.shape[1] / 2
-        coef_optimized[(polyorder + 1) * (polyorder + 2) // 2] += ydim / 2 - subfiltered.shape[0] / 2
-        
         log.info('Array origin: {:}'.format((coef_optimized[0], coef_optimized[(polyorder + 1) * (polyorder + 2) // 2])))
-
-        # Display a plot of the PSFlet locations after optimization, if desired
-        if show_plots:
-            fig, ax = plt.subplots(figsize=(6,5))
-            ax.imshow(unfiltered, origin='lower', cmap='viridis')
-            _x, _y = transform(lenslet_ind_x, lenslet_ind_y, polyorder, coef_optimized)
-            ax.scatter(_x, _y, s=5, c='r')
-            ax.set_title('PSFlet Locations After All Coef. Optimization (full-image)')
-            plt.show(block=False)
-            plt.pause(0.1)
 
     #############################################################
     # If we have coefficients from last iteration, assume that we
@@ -1099,7 +1169,8 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
     bounds = [(None, None)] * len(coef_optimized)
     bounds[0] = (coef_optimized[0] - scale, coef_optimized[0] + scale)  # x0: constrain to ±scale
     bounds[half_coef] = (coef_optimized[half_coef] - scale, coef_optimized[half_coef] + scale)  # y0: constrain to ±scale
-    res = optimize.minimize(corrval, coef_optimized, args=(lenslet_ind_x, lenslet_ind_x, filtered, polyorder, trimfrac), method='L-BFGS-B', bounds=bounds)
+    res = optimize.minimize(corrval, coef_optimized, 
+                            args=(lenslet_ind_x, lenslet_ind_x, filtered, polyorder, trimfrac, False, False), method='L-BFGS-B', bounds=bounds)
 
     coef_optimized = res.x
     log.info(f'Lenslet array origin (pixels): {(coef_optimized[0], coef_optimized[(polyorder + 1) * (polyorder + 2) // 2])}')
@@ -1113,6 +1184,10 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         fig, ax = plt.subplots(figsize=(6,5))
         ax.imshow(unfiltered, origin='lower', cmap='viridis')
         ax.scatter(_x, _y, s=10, c='r')
+        ax.set_xlim(0, xdim)
+        ax.set_ylim(0, ydim)
+        ax.set_xlabel('X (pixels)')
+        ax.set_ylabel('Y (pixels)')
         ax.set_title('PSFlet Locations After Full Optimization')
         plt.show(block=False)
         plt.pause(0.1)
