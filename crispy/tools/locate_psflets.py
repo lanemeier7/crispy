@@ -950,103 +950,19 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
 
         log.info("Initializing PSFlet location transformation coefficients")
         correlation_score_best = 0  # Initialize best correlation value
-        # subshape = np.min([xdim,ydim]) // 3  # Define size of subimage for initial optimization
-        num_psflets_for_subimage = 20  # Approximately how many PSFlets do we want on each side in the subimage?
+        num_psflets_for_subimage = int(nlens // 2.5)   # Approximately how many PSFlets do we want on each side in the subimage?
         subshape = int(scale * num_psflets_for_subimage)  # Define size of subimage for initial optimization. 
-        # _s = int(1.5 * num_psflets_for_subimage)  # Define slice size for subsampling lenslet grid
-        subfiltered = ndimage.interpolation.spline_filter(unfiltered[(unfiltered.shape[0] // 2 - subshape // 2 -1):unfiltered.shape[0] // 2 + subshape // 2, 
-                                                        (unfiltered.shape[1] // 2 - subshape // 2 -1):unfiltered.shape[1] // 2 + subshape // 2])
+        subfiltered = ndimage.interpolation.spline_filter(unfiltered[(ydim // 2 - subshape // 2 - 1):ydim // 2 + subshape // 2, 
+                                                        (xdim // 2 - subshape // 2 - 1):xdim // 2 + subshape // 2])
         lenslet_ind_x_sub = lenslet_ind_x[(nlens // 2 - num_psflets_for_subimage // 2):(nlens // 2 + num_psflets_for_subimage // 2),
                                           (nlens // 2 - num_psflets_for_subimage // 2):(nlens // 2 + num_psflets_for_subimage // 2)]
         lenslet_ind_y_sub = lenslet_ind_y[(nlens // 2 - num_psflets_for_subimage // 2):(nlens // 2 + num_psflets_for_subimage // 2),
                                           (nlens // 2 - num_psflets_for_subimage // 2):(nlens // 2 + num_psflets_for_subimage // 2)]
-
-        # def initial_transformation_fitter(points_to_transform_x, points_to_transform_y,
-        #                                   target_points_x, target_points_y,
-        #                                   show_plots=False, max_distance=None):
-        #     """
-        #     Estimate an affine transformation that maps one set of points onto another.
-
-        #     Handles unequal-length inputs by using the Hungarian algorithm to find the
-        #     globally optimal 1-to-1 correspondence between source and target points before
-        #     fitting. If source has more points than target, the unmatched source points are
-        #     simply ignored.
-
-        #     Parameters
-        #     ----------
-        #     points_to_transform_x: array-like
-        #         x coordinates of the points to be transformed (the "pre" dataset)
-        #     points_to_transform_y: array-like
-        #         y coordinates of the points to be transformed (the "pre" dataset)
-        #     target_points_x: array-like
-        #         x coordinates of the points to map onto (the target dataset)
-        #     target_points_y: array-like
-        #         y coordinates of the points to map onto (the target dataset)
-        #     show_plots: Boolean
-        #         If True, display a scatterplot of the pre-transformation, target, and
-        #         post-transformation datasets overlaid. Default is False.
-        #     max_distance: float or None
-        #         If given, matched pairs whose distance exceeds this threshold are discarded
-        #         before fitting. Useful for rejecting spurious matches. Default is None
-        #         (no distance filtering).
-
-        #     Returns
-        #     -------
-        #     best_fit_transform: skimage.transform.AffineTransform
-        #         The estimated affine transform mapping the points_to_transform onto the
-        #         target_points.
-        #     """
-        #     from skimage.transform import estimate_transform
-        #     from scipy.spatial.distance import cdist
-        #     from scipy.optimize import linear_sum_assignment
-
-        #     # Stack the coordinate pairs into (N, 2) arrays as expected by skimage
-        #     source_points = np.column_stack((np.ravel(points_to_transform_x),
-        #                                      np.ravel(points_to_transform_y)))
-        #     target_points = np.column_stack((np.ravel(target_points_x),
-        #                                      np.ravel(target_points_y)))
-
-        #     # Find the globally optimal 1-to-1 correspondence via the Hungarian algorithm.
-        #     # The cost matrix is (N_source, N_target); linear_sum_assignment returns
-        #     # N_min matched pairs, leaving any excess source points unmatched.
-        #     dist_matrix = cdist(source_points, target_points)
-        #     row_ind, col_ind = linear_sum_assignment(dist_matrix)
-
-        #     if max_distance is not None:
-        #         mask = dist_matrix[row_ind, col_ind] <= max_distance
-        #         row_ind, col_ind = row_ind[mask], col_ind[mask]
-
-        #     if len(row_ind) < 3:
-        #         raise ValueError(
-        #             f"Only {len(row_ind)} point pair(s) remain after matching "
-        #             f"(max_distance={max_distance}); need at least 3 to fit an affine transform."
-        #         )
-
-        #     best_fit_transform = estimate_transform(
-        #         'projective', source_points[row_ind], target_points[col_ind]
-        #     )
-
-        #     if show_plots:
-        #         # Apply the transform to the source points for the "post" dataset
-        #         transformed_points = best_fit_transform(source_points)
-
-        #         _, ax = plt.subplots()
-        #         # Pre-transformation: hollow circles
-        #         ax.scatter(source_points[:, 0], source_points[:, 1],
-        #                    facecolors='none', edgecolors='C0', label='Pre-transformation')
-        #         # Post-transformation: filled circles, same color as pre
-        #         ax.scatter(transformed_points[:, 0], transformed_points[:, 1],
-        #                    c='C0', label='Post-transformation')
-        #         # Target dataset
-        #         ax.scatter(target_points[:, 0], target_points[:, 1],
-        #                    c='C1', marker='x', label='Target')
-        #         ax.set_xlabel('x [pixels]')
-        #         ax.set_ylabel('y [pixels]')
-        #         ax.set_aspect('equal')
-        #         ax.legend()
-        #         plt.show()
-
-        #     return best_fit_transform
+        
+        
+        #########################################################
+        # Fit central 2x2 PSFlets
+        #########################################################
         
         # Locate PSFs in the subfiltered image with the find_peaks function and identify the one closest to the center
         peaks = find_peaks(subfiltered, threshold=np.max(subfiltered)/3)
@@ -1087,21 +1003,12 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
             plt.show(block=False)
             plt.pause(0.1)
         
-        # peaks = find_peaks(subfiltered_sub, threshold = np.max(subfiltered_sub) / 2, centroid_func=centroid_2dg)
-        # if len(peaks['x_peak'].value) != 4:
-        #     raise ValueError("Not exactly 4 peaks found in the subfiltered image.")
-
-        # # Get the ~horizontal side length of the square formed by the 4 peaks
-        # psflet_pitch_horizontal =  np.sqrt((np.sort(peaks['x_centroid'])[2] - np.sort(peaks['x_centroid'])[0])**2 + (
-        #                         np.sort(peaks['y_centroid'])[1] - np.sort(peaks['y_centroid'])[0])**2)
-        # psflet_pitch_vertical =  np.sqrt((np.sort(peaks['x_centroid'])[1] - np.sort(peaks['x_centroid'])[0])**2 + (
-        #                         np.sort(peaks['y_centroid'])[2] - np.sort(peaks['y_centroid'])[0])**2)
-        # shear_guess_horizontal = -(psflet_pitch_horizontal / scale - 1)
-        # shear_guess_vertical = -(psflet_pitch_vertical / scale - 1)
-
-        # transformation_result = initial_transformation_fitter(lenslet_pos_x_temp, lenslet_pos_y_temp, peaks['x_peak'].value,peaks['y_peak'].value,show_plots=True)
-
+        ###############################################
+        # Fit subfiltered image
+        ###############################################
+        
         # Iterate over a grid of offsets to find the best initial guess for the transformation coefficients
+        log.info("Rastering through translation coefficients for frame " + inImage.filename)
         for ix in np.arange(-(scale+1)//2, (scale+1)//2, 0.5):
             for iy in np.arange(-(scale+2)//2, (scale+2)//2, 0.5):
                 # coef = initcoef(order=polyorder, x0=ix + (subshape / 2) + scale,
@@ -1133,7 +1040,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         bounds[x0_term] = (coef_optimized[x0_term] - scale, coef_optimized[x0_term] + scale)  # x0: constrain to ±scale
         bounds[y0_term] = (coef_optimized[y0_term] - scale, coef_optimized[y0_term] + scale)  # y0: constrain to ±scale
         res = optimize.minimize(corrval, coef_optimized, args=(lenslet_ind_x_sub, lenslet_ind_y_sub,
-                                subfiltered, polyorder, trimfrac, False, True), method='L-BFGS-B', bounds=bounds)
+                                subfiltered, polyorder, trimfrac, False, False), method='L-BFGS-B', bounds=bounds)
         coef_optimized = res.x.copy()
         
         # Display a plot of the PSFlet locations after low-order optimization, if desired
@@ -1142,15 +1049,13 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
             ax.imshow(subfiltered, origin='lower', cmap='viridis')
             _x, _y = transform(lenslet_ind_x_sub, lenslet_ind_y_sub, polyorder, coef_optimized)
             ax.scatter(_x, _y, s=10, c='r')
-            ax.set_title('PSFlet Locations After Full Initial Optimization')
+            ax.set_title('PSFlet Locations After All Coef. Optimization')
             plt.show(block=False)
             plt.pause(0.1)
 
         # Add the subimage offset to the 0th-order coefficients for each axis to account for the fact that we optimized on a subimage rather than the full image
-        # coef_optimized[0] += subshape
-        # coef_optimized[(polyorder + 1) * (polyorder + 2) // 2] += subshape
-        coef_optimized[0] += xdim / 2 - coef_optimized[0]
-        coef_optimized[(polyorder + 1) * (polyorder + 2) // 2] += ydim / 2 - coef_optimized[(polyorder + 1) * (polyorder + 2) // 2]
+        coef_optimized[0] += xdim / 2 - subfiltered.shape[1] / 2
+        coef_optimized[(polyorder + 1) * (polyorder + 2) // 2] += ydim / 2 - subfiltered.shape[0] / 2
         
         log.info('Array origin: {:}'.format((coef_optimized[0], coef_optimized[(polyorder + 1) * (polyorder + 2) // 2])))
 
@@ -1160,7 +1065,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
             ax.imshow(unfiltered, origin='lower', cmap='viridis')
             _x, _y = transform(lenslet_ind_x, lenslet_ind_y, polyorder, coef_optimized)
             ax.scatter(_x, _y, s=5, c='r')
-            ax.set_title('PSFlet Locations After Full Initial Optimization (full-image)')
+            ax.set_title('PSFlet Locations After All Coef. Optimization (full-image)')
             plt.show(block=False)
             plt.pause(0.1)
 
@@ -1208,7 +1113,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         fig, ax = plt.subplots(figsize=(6,5))
         ax.imshow(unfiltered, origin='lower', cmap='viridis')
         ax.scatter(_x, _y, s=10, c='r')
-        ax.set_title('PSFlet Locations After Final Optimization')
+        ax.set_title('PSFlet Locations After Full Optimization')
         plt.show(block=False)
         plt.pause(0.1)
 
