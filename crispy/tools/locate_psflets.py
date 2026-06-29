@@ -307,8 +307,7 @@ class PSFLets:
             lam1=None,
             lam2=None,
             borderpix=4,
-            finexy=None,
-            plot_wavelength_map=False):
+            finexy=None):
         '''
         Calculates the wavelength at the center of each pixel within a microspectrum for all lenslets.
 
@@ -331,9 +330,7 @@ class PSFLets:
             Number of pixels to exclude at the edges of the detector. Default is 4.
         finexy : tuple, optional
             Fine adjustments to x and y positions and SNR threshold.
-        plot_wavelength_map : boolean
-            Display a plot that helps relate the detector image to particular lenslets and wavelenghts. Helpful for troubleshooting. 
-           
+
         Returns
         -------
         None
@@ -451,41 +448,6 @@ class PSFLets:
         self.lam_indx = lam_out[:, :, :nlam_max]  # wavelengths at int. pixel indices
         self.nlam_max = np.amax(nlam)
         self.good = good
-       
-        # Make a plot of pixel wavelengths vs pixel position
-        if plot_wavelength_map:
-            fig, ax = plt.subplots(figsize=(8, 6))
-            ax.set_aspect('equal')
-
-            # Flatten the arrays and create a mask for non-zero wavelengths
-            xind_temp = np.arange(self.xindx.shape[1])
-            yind_temp = np.arange(self.xindx.shape[0])
-            xind_temp, yind_temp = np.meshgrid(xind_temp, yind_temp)
-            x = self.xindx.flatten()
-            y = self.yindx.flatten()
-            wavelengths = self.lam_indx.flatten()
-            mask = wavelengths != 0
-
-            # Create scatter plot with masked data
-            scatter = ax.scatter(x[mask], y[mask], c=wavelengths[mask], s=5, cmap='viridis')
-
-            # Add annotations with the index of each lenslet overlaid with each microspectrum
-            # Warning, uncommenting the following line will make the plot slower to render
-            # for i in range(par.nlens):
-            #     for j in range(par.nlens):
-            #         # print(i,j)
-            #         xpos, ypos = [self.xindx[i, j, 0], self.yindx[i, j, 0]]
-            #         if xpos == 0 or ypos == 0:
-            #             continue
-            #         ax.annotate(f'({i},{j})', xy=(xpos-2, ypos+1), color='black', fontsize=12)
-            ax.set_xlim(100, 200)
-            ax.set_ylim(100, 200)
-            ax.set_xlabel('pixels')
-            ax.set_ylabel('pixels')
-            ax.set_title('Lenslet + Wavelength Map')
-            fig.colorbar(scatter, ax=ax, label='Wavelength (nm)')
-            fig.tight_layout()
-            plt.show()
 
 
 def initcoef(order, scale, phi, x0=0, y0=0):
@@ -788,9 +750,18 @@ def corrval(coef, x, y, input_image, order, trimfrac=0.1, show_plots=False, low_
     # discard these from the calculation before trimming.
     #################################################################
 
+    # Calculate the (x,y) lenslet coordinates using the current coef values 
     _x, _y = transform(x, y, order, coef)
+    
+    # Temporary, an experiment to try to reduce the odds of the coefficient minimizer finding ridiculous solutions
+    # Identify the indices that correspond to unique pairs of (x,y) coordinates so we don't double-count flux values.
+    # unique_coords, unique_indices = np.unique(np.stack((np.round(_x).astype(int), np.round(_y).astype(int)), axis=1), axis=0, return_index=True)
+    # _x_unique, _y_unique = _x[unique_indices], _y[unique_indices]
+    # vals = ndimage.map_coordinates(input_image, [_y_unique, _x_unique], mode='constant',
+    #                                cval=np.nan, prefilter=False)
     vals = ndimage.map_coordinates(input_image, [_y, _x], mode='constant',
                                    cval=np.nan, prefilter=False)
+
     vals_ok = vals[np.where(np.isfinite(vals))]
 
     if trimfrac > 0.0:
@@ -819,31 +790,6 @@ def corrval(coef, x, y, input_image, order, trimfrac=0.1, show_plots=False, low_
         plt.show(block=False)
 
     return score
-
-
-# COMMENTED OUT: Function unused in repository, commented out as requested
-# def corrvalsum(coef, x, y, filtered, order, trimfrac=0.1, gsize=2):
-#     # TODO, is this function used anywhere in this repo? If not, comment it out. 
-#     # TODO, add doscring
-#     _x, _y = transform(x, y, order, coef)
-#     ydim, xdim = filtered.shape
-#     s = 0.0
-#     ry = np.reshape(_y, -1)
-#     rx = np.reshape(_x, -1)
-#     for i in range(len(ry)):
-#         yi = ry[i]
-#         xi = rx[i]
-#         xmin = int(xi) - gsize
-#         xmax = xmin + 2 * gsize
-#         ymin = int(yi) - gsize
-#         ymax = ymin + 2 * gsize
-#         if ymin > 2 * gsize and xmin > 2 * gsize and xmax < xdim - 2 * gsize and ymax < ydim - 2 * gsize:
-#             # dx = xi - int(xi)
-#             # dy = yi - int(yi)
-#             # s+=np.sum(simplepsf(size=2*gsize,fwhm=fwhm,offx=dx,offy=dy)*filtered[ymin:ymax,xmin:xmax])
-#             # s+=np.sum(gausspsf(size=2*gsize,fwhm=fwhm,offx=dx,offy=dy)*filtered[ymin:ymax,xmin:xmax])
-#             s += np.sum(filtered[ymin:ymax, xmin:xmax])
-#     return -s
 
 
 def optimize_coef_from_image(unfiltered, coef, lenslet_ind_x, lenslet_ind_y,
@@ -973,7 +919,7 @@ def optimize_coef_from_image(unfiltered, coef, lenslet_ind_x, lenslet_ind_y,
 
 
 def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
-                  phi=np.arctan2(1.926, -1), scale=15.02, nlens=108, finesearch=3,
+                  phi=np.arctan2(1.926, -1), scale=15.02, nlens=108, finesearch=5,
                   show_plots=False):
     """
     function locatePSFlets takes an Image class, assumed to be a
@@ -1007,7 +953,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
     nlens: int
         Number of lenslets. Default 108
     finesearch: int
-        Fine search parameter. Default 3 
+        How many pixels to search in both the x/y directions for new translation coefficients after incrementing wavelengths
 
     Returns
     -------
@@ -1119,9 +1065,12 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         if show_plots:
             fig, ax = plt.subplots(figsize=(6,5))
             ax.imshow(subfiltered_sub, origin='lower', cmap='viridis')
+            _x, _y = transform(lenslet_ind_x_temp, lenslet_ind_y_temp, polyorder, coef)
+            ax.scatter(_x, _y, s=10, c='b', label='initial')
             _x, _y = transform(lenslet_ind_x_temp, lenslet_ind_y_temp, polyorder, coef_optimized)
-            ax.scatter(_x, _y, s=10, c='r')
+            ax.scatter(_x, _y, s=10, c='r', label='final')
             ax.set_title(f'PSFlet Locations After Initial \nShear Optimization')
+            ax.legend()
             plt.show(block=False)
             plt.pause(0.1)
         
@@ -1133,9 +1082,9 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         # stepping up gradually rather than jumping straight to the full image.
         log.info("Optimizing PSFlet location transformation coefficients over image fractions for frame " + inImage.filename)
         coef_optimized = optimize_coef_from_image(
-            unfiltered, coef_optimized, lenslet_ind_x, lenslet_ind_y,
+            filtered, coef_optimized, lenslet_ind_x, lenslet_ind_y,
             polyorder, scale, trimfrac,
-            image_fractions=[0.1, 0.3, 0.5, 0.7, 0.9], show_plots=show_plots)
+            image_fractions=[0.2, 0.5, 0.8], show_plots=show_plots)
 
         log.info('Array origin: {:}'.format((coef_optimized[0], coef_optimized[(polyorder + 1) * (polyorder + 2) // 2])))
 
@@ -1150,17 +1099,31 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         correlation_score_best = 0
         coef_baseline = list(coef[:])  # Save a copy of the starting input coefficients as our baseline
 
-        for ix in np.arange(-finesearch, finesearch, 0.2):
-            for iy in np.arange(-finesearch, finesearch, 0.2):
+        for ix in np.arange(-finesearch, finesearch, 0.3):
+            for iy in np.arange(-finesearch, finesearch, 0.3):
                 coef = coef_baseline[:]  # Make a temporary copy of the coefficient array to work with
                 coef[0] += ix
                 coef[(polyorder + 1) * (polyorder + 2) // 2] += iy
 
-                correlation_score_current = corrval(coef, x, y, filtered, polyorder, trimfrac)
+                correlation_score_current = corrval(coef, lenslet_ind_x, lenslet_ind_y, filtered, polyorder, trimfrac)
                 if correlation_score_current < correlation_score_best:
                     correlation_score_best = correlation_score_current
                     coef_current_best = copy.deepcopy(coef)
         coef_optimized = coef_current_best
+        _x, _y = transform(lenslet_ind_x, lenslet_ind_y, polyorder, coef_optimized)
+
+        
+        if show_plots:
+            fig, ax = plt.subplots(figsize=(6,5))
+            ax.imshow(unfiltered, origin='lower', cmap='viridis')
+            ax.scatter(_x, _y, s=10, c='r')
+            ax.set_xlim(0, xdim)
+            ax.set_ylim(0, ydim)
+            ax.set_xlabel('X (pixels)')
+            ax.set_ylabel('Y (pixels)')
+            ax.set_title('PSFlet Locations After Fine Search Optimization')
+            plt.show(block=False)
+            plt.pause(0.1)
 
     # Now perform the minimiation routine on the full image. 
     log.info("Performing final optimization of PSFlet location transformation coefficients for frame " + inImage.filename)
@@ -1170,14 +1133,14 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
     bounds[0] = (coef_optimized[0] - scale, coef_optimized[0] + scale)  # x0: constrain to ±scale
     bounds[half_coef] = (coef_optimized[half_coef] - scale, coef_optimized[half_coef] + scale)  # y0: constrain to ±scale
     res = optimize.minimize(corrval, coef_optimized, 
-                            args=(lenslet_ind_x, lenslet_ind_x, filtered, polyorder, trimfrac, False, False), method='L-BFGS-B', bounds=bounds)
+                            args=(lenslet_ind_x, lenslet_ind_y, filtered, polyorder, trimfrac, False, False), method='L-BFGS-B',bounds=bounds)
 
     coef_optimized = res.x
     log.info(f'Lenslet array origin (pixels): {(coef_optimized[0], coef_optimized[(polyorder + 1) * (polyorder + 2) // 2])}')
 
     if not res.success:
         log.info("WARNING: Optimizing PSFlet location transformation coefficients may have failed for frame " + inImage.filename)
-    _x, _y = transform(lenslet_ind_x, lenslet_ind_x, polyorder, coef_optimized)
+    _x, _y = transform(lenslet_ind_x, lenslet_ind_y, polyorder, coef_optimized)
 
     # Display a plot of the PSFlet locations after final optimization, if desired
     if show_plots:
