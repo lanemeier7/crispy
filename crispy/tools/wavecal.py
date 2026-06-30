@@ -982,10 +982,11 @@ def evaluate_dispersion_solution_fit_quality(image_data, x_calc, y_calc,
     sigma-clipped statistics.
     """
     # Compute background statistics using sigma-clipped estimation.
-    median, std = sigma_clipped_stats(image_data, sigma=3.0, maxiters=5)[:2]
+    median, std = sigma_clipped_stats(image_data)[:2]
 
     # Detect local maxima above background, refining each to a center-of-mass centroid.
-    threshold = median + 5.0 * std
+    threshold = np.max(image_data)/5 #alternatively, median + 10 * std
+    log.info('evaluate_dispersion_solution_fit_quality: detecting peaks above background')
     peaks = find_peaks(image_data, threshold=threshold, box_size=window_size,
                        centroid_func=centroid_2dg)
 
@@ -1000,6 +1001,7 @@ def evaluate_dispersion_solution_fit_quality(image_data, x_calc, y_calc,
              'against calculated PSFlet positions')
 
     # Build a KD-tree on the calculated PSFlet positions and query every measured peak at once.
+    log.info(f'evaluate_dispersion_solution_fit_quality: building KD-tree for calculated PSFlet positions')
     calc_points = np.column_stack([np.asarray(x_calc).ravel(), np.asarray(y_calc).ravel()])
     tree = cKDTree(calc_points)
     distances, _ = tree.query(np.column_stack([x_peak, y_peak]))
@@ -2049,6 +2051,8 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         px, py = lenslet_pixel_positions[lenslet_key]
         ax_pos.scatter(px, py, color=color, s=60, label=f'Lenslet {list(lenslet_key)}', zorder=3)
 
+    # ax_disp.set_xlim(550,800)
+    # ax_disp.set_ylim(2,3.4)
     ax_disp.set_xlabel('Wavelength (nm)')
     ax_disp.set_ylabel('Dispersion (nm/pixel)')
     ax_disp.set_title('Dispersion vs. Wavelength')
@@ -2176,7 +2180,8 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
     vmax_trace = trace_lengths[trace_bounds_mask].max() if trace_bounds_mask.any() else None
 
     fig, ax = plt.subplots(figsize=(6, 5))
-    scatter = ax.scatter(x_positions_low, y_positions_low, c=trace_lengths, s=20, vmin=vmin_trace, vmax=vmax_trace)
+    scatter = ax.scatter(x_positions_low, y_positions_low, c=trace_lengths, 
+                         s=20, vmin=vmin_trace, vmax=vmax_trace)
     cbar = fig.colorbar(scatter, ax=ax)
     cbar.set_label('Trace Length (pixels)')
     ax.set_xlim(xmin_plot, xmax_plot)
