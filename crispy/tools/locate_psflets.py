@@ -891,11 +891,18 @@ def optimize_coef_from_image(unfiltered, coef, lenslet_ind_x, lenslet_ind_y,
         bounds[x0_term] = (coef[x0_term] - scale, coef[x0_term] + scale)
         bounds[y0_term] = (coef[y0_term] - scale, coef[y0_term] + scale)
         log.info(f'Fitting coefficients for the central {frac}/1.0 of the image')
+        # Temporary, delete me if still commented out. I was experimenting with using L-BFGS-B fitting instead of Powell.
+        # res = optimize.minimize(corrval, coef, args=(lenslet_ind_x_sub, lenslet_ind_y_sub,
+        #                         cropped_image, polyorder, trimfrac, False, False),
+        #                         method='L-BFGS-B', bounds=bounds)
         res = optimize.minimize(corrval, coef, args=(lenslet_ind_x_sub, lenslet_ind_y_sub,
-                                cropped_image, polyorder, trimfrac, False, False),
-                                method='L-BFGS-B', bounds=bounds)
+                        cropped_image, polyorder, trimfrac, False, False),
+                        method='Powell')
         coef = res.x.copy()
-
+        
+        if not res.success:
+            log.info('  WARNING: Optimizing PSFlet location transformation coefficients may have failed!')
+    
         if show_plots:
             fig, ax = plt.subplots(figsize=(6, 5))
             ax.imshow(cropped_image, origin='lower', cmap='viridis')
@@ -1042,20 +1049,21 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         
         # Define a new windowed image that contains this PSFlet, along with the one to its right, above, and above-right.
         # So this windowed image should contain precisely 4 PSFlets. We will use this image to estimate the coefficients that affect shear.
-        border_offset = scale // 2
+        border_offset = scale // 2 - 1
         xmin = np.min([peak_x - scale * np.sin(phi) , peak_x]) - border_offset
         xmax = peak_x + np.max([scale*(np.cos(phi) - np.sin(phi)),scale*np.cos(phi)]) + border_offset
         y_min = np.min([peak_y + scale * np.sin(phi) , peak_y]) - border_offset
         y_max = peak_y + np.max([scale*(np.cos(phi)+np.sin(phi)),scale*np.cos(phi)]) + border_offset
         subfiltered_sub = subfiltered[int(y_min):int(y_max), int(xmin):int(xmax)]
         peaks = find_peaks(subfiltered_sub, threshold = np.max(subfiltered_sub) / 2, centroid_func=centroid_2dg)
-        if show_plots:
-            plt.subplots();plt.imshow(subfiltered_sub,origin='lower');plt.show()
             
         # Make a grid of 2x2 lenslets and use the corrval() function to optimize the translation coefficients for the PSFlet locations in subfiltered_sub
         lenslet_ind_x_temp = np.arange(2)
         lenslet_ind_x_temp, lenslet_ind_y_temp = np.meshgrid(lenslet_ind_x_temp, lenslet_ind_x_temp)  # Re-using the x-array for this operation since the lenslet array is square
-        coef = initcoef(order=polyorder, x0=peaks['x_peak'].min(), y0=peaks['y_peak'][peaks['x_peak'].argmin()], scale=scale, phi=phi)  # Define an initial set of coefficients with a reasonable guess for x0/y0
+        if phi <= 0:
+            coef = initcoef(order=polyorder, x0=peaks['x_peak'].min(), y0=peaks['y_peak'][peaks['x_peak'].argmin()], scale=scale, phi=phi)  # Define an initial set of coefficients with a reasonable guess for x0/y0
+        else:
+            coef = initcoef(order=polyorder, x0=peaks['x_peak'][peaks['y_peak'].argmin()], y0=peaks['y_peak'].min(), scale=scale, phi=phi)  # Define an initial set of coefficients with a reasonable guess for x0/y0
         res = optimize.minimize(corrval, coef, args=(lenslet_ind_x_temp, lenslet_ind_y_temp,
                 subfiltered_sub, polyorder, trimfrac, False, True), method='Powell')
         coef_optimized = res.x.copy()
@@ -1128,12 +1136,15 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
     # Now perform the minimiation routine on the full image. 
     log.info("Performing final optimization of PSFlet location transformation coefficients for frame " + inImage.filename)
     # Set up bounds for translation coefficients (x0 and y0) to constrain them ±scale from current value
-    half_coef = (polyorder + 1) * (polyorder + 2) // 2
-    bounds = [(None, None)] * len(coef_optimized)
-    bounds[0] = (coef_optimized[0] - scale, coef_optimized[0] + scale)  # x0: constrain to ±scale
-    bounds[half_coef] = (coef_optimized[half_coef] - scale, coef_optimized[half_coef] + scale)  # y0: constrain to ±scale
+    # Temporary, delete me if still commented out. I was experimenting with using L-BFGS-B fitting instead of Powell.
+    # half_coef = (polyorder + 1) * (polyorder + 2) // 2
+    # bounds = [(None, None)] * len(coef_optimized)
+    # bounds[0] = (coef_optimized[0] - scale, coef_optimized[0] + scale)  # x0: constrain to ±scale
+    # bounds[half_coef] = (coef_optimized[half_coef] - scale, coef_optimized[half_coef] + scale)  # y0: constrain to ±scale
+    # res = optimize.minimize(corrval, coef_optimized, 
+    #                         args=(lenslet_ind_x, lenslet_ind_y, filtered, polyorder, trimfrac, False, False), method='L-BFGS-B',bounds=bounds)
     res = optimize.minimize(corrval, coef_optimized, 
-                            args=(lenslet_ind_x, lenslet_ind_y, filtered, polyorder, trimfrac, False, False), method='L-BFGS-B',bounds=bounds)
+                            args=(lenslet_ind_x, lenslet_ind_y, filtered, polyorder, trimfrac, False, False), method='Powell')
 
     coef_optimized = res.x
     log.info(f'Lenslet array origin (pixels): {(coef_optimized[0], coef_optimized[(polyorder + 1) * (polyorder + 2) // 2])}')

@@ -941,9 +941,9 @@ def monochromatic_update(par, inImage, inLam, order=3, apodize=False):
     return dx, dy, dphi
 
 
-def evaluate_dispersion_solution_fit_quality(image_data, x_calc, y_calc, median, std,
+def evaluate_dispersion_solution_fit_quality(image_data, x_calc, y_calc,
                                              output_directory, lam=None, window_size=9,
-                                             x_offset=0, y_offset=0):
+                                             x_offset=0, y_offset=0, pixel_pitch=None):
     """
     Produce a diagnostic scatterplot of the dispersion-solution fit quality.
 
@@ -961,9 +961,6 @@ def evaluate_dispersion_solution_fit_quality(image_data, x_calc, y_calc, median,
             Calculated PSFlet x/y positions from the optimized polynomial coefficients. These may be
             in full-frame coordinates while image_data is cropped; x_offset/y_offset reconcile the
             two frames.
-    median, std: float
-            Sigma-clipped background median and standard deviation of image_data, used to set the
-            peak detection threshold (median + 5*std).
     output_directory: string
             Directory in which to save the diagnostic PNG.
     lam: float (optional)
@@ -973,12 +970,20 @@ def evaluate_dispersion_solution_fit_quality(image_data, x_calc, y_calc, median,
     x_offset, y_offset: int
             Pixel offset (the fitting-window origin) added to the measured peak coordinates so they
             share the full-frame coordinate system of x_calc/y_calc. Default 0.
+    pixel_pitch: float (optional)
+            Detector pixel pitch in microns. If provided, the plot and colorbar are scaled to display
+            positions and distances in microns instead of pixels. Default None (use pixels).
 
     Notes
     -----
     Peak detection typically returns many thousands of spots by design. Nearest-neighbor matching
     is performed with a single vectorized scipy.spatial.cKDTree query rather than a per-peak loop.
+    Background statistics (median and standard deviation) are computed internally using
+    sigma-clipped statistics.
     """
+    # Compute background statistics using sigma-clipped estimation.
+    median, std = sigma_clipped_stats(image_data, sigma=3.0, maxiters=5)[:2]
+
     # Detect local maxima above background, refining each to a center-of-mass centroid.
     threshold = median + 5.0 * std
     peaks = find_peaks(image_data, threshold=threshold, box_size=window_size,
@@ -999,15 +1004,31 @@ def evaluate_dispersion_solution_fit_quality(image_data, x_calc, y_calc, median,
     tree = cKDTree(calc_points)
     distances, _ = tree.query(np.column_stack([x_peak, y_peak]))
 
+    # Optionally convert from pixel units to physical units (microns).
+    if pixel_pitch is not None:
+        x_plot = x_peak * pixel_pitch
+        y_plot = y_peak * pixel_pitch
+        distances_plot = distances * pixel_pitch
+        unit_str = 'microns'
+        unit_abbr = 'μm'
+        vmax = 2 * np.percentile(distances_plot,75)
+    else:
+        x_plot = x_peak
+        y_plot = y_peak
+        distances_plot = distances
+        unit_str = 'pixels'
+        unit_abbr = 'px'
+        vmax = 2 * np.percentile(distances_plot,75)
+
     fig, ax = plt.subplots(figsize=(6, 5))
-    scatter = ax.scatter(x_peak, y_peak, c=distances, s=5, vmax=1.5)
+    scatter = ax.scatter(x_plot, y_plot, c=distances_plot, s=5, vmax=vmax)
     cbar = fig.colorbar(scatter, ax=ax)
-    cbar.set_label('Distance between PSFlet centers (measured vs. calculated via fit) (pixels)')
+    cbar.set_label(f'Distance between PSFlet centers\n(measured vs. calculated via fit) ({unit_abbr})')
     ax.set_aspect('equal')
-    ax.set_xlim([np.min(x_peak), np.max(x_peak)])
-    ax.set_ylim([np.min(y_peak), np.max(y_peak)])
-    ax.set_xlabel('Detector X (pixels)')
-    ax.set_ylabel('Detector Y (pixels)')
+    ax.set_xlim([np.min(x_plot), np.max(x_plot)])
+    ax.set_ylim([np.min(y_plot), np.max(y_plot)])
+    ax.set_xlabel(f'Detector X ({unit_str})')
+    ax.set_ylabel(f'Detector Y ({unit_str})')
     title = 'Calculated PSFlet location error'
     if lam is not None:
         title += f' at {lam:g} nm'
@@ -1320,8 +1341,8 @@ def buildcalibrations(
                     x_offset = fitting_window[0] if fitting_window is not None else 0
                     y_offset = fitting_window[2] if fitting_window is not None else 0
                     evaluate_dispersion_solution_fit_quality(
-                        im.data, x + x_offset, y + y_offset, median, std, outdir,
-                        lam=lamlist[i], x_offset=x_offset, y_offset=y_offset)
+                        im.data, x + x_offset, y + y_offset, outdir,
+                        lam=lamlist[i], x_offset=x_offset, y_offset=y_offset, pixel_pitch=par.pixsize * 1E6)
 
                 if finecal:
                     log.info('Finding individual centroids (experimental)')
@@ -1436,8 +1457,7 @@ def buildcalibrations(
         lam1=lam1 / 1.01,
         lam2=lam2 * 1.01,
         borderpix=borderpix,
-        finexy=finexy,
-        plot_wavelength_map=True)
+        finexy=finexy)
     psftool.savepixsol(outdir=outdir)
 #     else:
 #         log.info("Loading previous wavelength calibration (PSFloc.fits)")
