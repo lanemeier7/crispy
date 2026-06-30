@@ -1,10 +1,11 @@
 from scipy.optimize import curve_fit
-from photutils.centroids import centroid_com
+from photutils.centroids import centroid_com, centroid_2dg
 from crispy.tools.imgtools import gen_bad_pix_mask
 from scipy.interpolate import griddata
 from astropy.stats import sigma_clipped_stats
-from photutils.detection import DAOStarFinder
+from photutils.detection import DAOStarFinder, find_peaks
 from scipy import ndimage, interpolate
+from scipy.spatial import cKDTree
 import warnings
 import glob
 from shutil import copy2
@@ -940,6 +941,88 @@ def monochromatic_update(par, inImage, inLam, order=3, apodize=False):
     return dx, dy, dphi
 
 
+def evaluate_dispersion_solution_fit_quality(image_data, x_calc, y_calc, median, std,
+                                             output_directory, lam=None, window_size=9,
+                                             x_offset=0, y_offset=0):
+    """
+    Produce a diagnostic scatterplot of the dispersion-solution fit quality.
+
+    Independently detects PSFlet peaks in a calibration image and measures, for each peak, the
+    distance to the nearest PSFlet position predicted by the optimized polynomial solution. The
+    resulting "calculated PSFlet location error" is displayed as a scatterplot colored by that
+    distance, so the user can visualize how well the dispersion fit matches the real spots as a
+    function of position on the sensor.
+
+    Parameters
+    ----------
+    image_data: 2D ndarray
+            The calibration image (possibly cropped to a fitting window) in which to detect peaks.
+    x_calc, y_calc: ndarray
+            Calculated PSFlet x/y positions from the optimized polynomial coefficients. These may be
+            in full-frame coordinates while image_data is cropped; x_offset/y_offset reconcile the
+            two frames.
+    median, std: float
+            Sigma-clipped background median and standard deviation of image_data, used to set the
+            peak detection threshold (median + 5*std).
+    output_directory: string
+            Directory in which to save the diagnostic PNG.
+    lam: float (optional)
+            Wavelength (nm) of the image, used only for the plot title and output filename.
+    window_size: int
+            Box size (pixels) passed to find_peaks for local-maximum detection. Default 9.
+    x_offset, y_offset: int
+            Pixel offset (the fitting-window origin) added to the measured peak coordinates so they
+            share the full-frame coordinate system of x_calc/y_calc. Default 0.
+
+    Notes
+    -----
+    Peak detection typically returns many thousands of spots by design. Nearest-neighbor matching
+    is performed with a single vectorized scipy.spatial.cKDTree query rather than a per-peak loop.
+    """
+    # Detect local maxima above background, refining each to a center-of-mass centroid.
+    threshold = median + 5.0 * std
+    peaks = find_peaks(image_data, threshold=threshold, box_size=window_size,
+                       centroid_func=centroid_2dg)
+
+    if peaks is None or len(peaks) == 0:
+        log.info("evaluate_dispersion_solution_fit_quality: no peaks detected; skipping fit-quality plot")
+        return
+
+    # find_peaks returns refined centroid columns when a centroid_func is supplied.
+    x_peak = np.asarray(peaks['x_centroid']) + x_offset
+    y_peak = np.asarray(peaks['y_centroid']) + y_offset
+    log.info(f'evaluate_dispersion_solution_fit_quality: matching {len(x_peak)} detected peaks '
+             'against calculated PSFlet positions')
+
+    # Build a KD-tree on the calculated PSFlet positions and query every measured peak at once.
+    calc_points = np.column_stack([np.asarray(x_calc).ravel(), np.asarray(y_calc).ravel()])
+    tree = cKDTree(calc_points)
+    distances, _ = tree.query(np.column_stack([x_peak, y_peak]))
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    scatter = ax.scatter(x_peak, y_peak, c=distances, s=5, vmax=1.5)
+    cbar = fig.colorbar(scatter, ax=ax)
+    cbar.set_label('Distance between PSFlet centers (measured vs. calculated via fit) (pixels)')
+    ax.set_aspect('equal')
+    ax.set_xlim([np.min(x_peak), np.max(x_peak)])
+    ax.set_ylim([np.min(y_peak), np.max(y_peak)])
+    ax.set_xlabel('Detector X (pixels)')
+    ax.set_ylabel('Detector Y (pixels)')
+    title = 'Calculated PSFlet location error'
+    if lam is not None:
+        title += f' at {lam:g} nm'
+    ax.set_title(title)
+    fig.tight_layout()
+    plt.show(block=False)
+    plt.pause(0.1)
+
+    if output_directory is not None:
+        suffix = f'_{lam:g}nm' if lam is not None else ''
+        filename = os.path.join(output_directory, f'fit_quality{suffix}.png')
+        fig.savefig(filename, dpi=300, bbox_inches='tight')
+        log.info(f'Saved fit-quality diagnostic to {filename}')
+
+
 def buildcalibrations(
         par,
         filelist=None,
@@ -969,7 +1052,9 @@ def buildcalibrations(
         halfsize=5,
         snrthreshold=10,
         initcoef=None,
-        readImgs=True):
+        readImgs=True,
+        fitting_window=None,
+        evaluate_fit_quality=False):
     """
     Master wavelength calibration function that generates all files required to process IFS cubes.
 
@@ -1065,6 +1150,17 @@ def buildcalibrations(
     initcoef: numpy array
             Coefficient array corresponding to an initial guess of the polynomial map. Leave to None
             in order to start from scratch.
+    fitting_window: list of int (optional)
+            [xmin, xmax, ymin, ymax] region (in full-frame detector pixels) to crop all ingested
+            images to before they are passed to locatePSFlets(). Restricts the PSFlet fit to a
+            sub-region of the sensor. The returned positions and polynomial coefficients are
+            offset back into full-frame detector coordinates, so lamsol.dat remains compatible with
+            uncropped science data. If None (default), the full image is used.
+    evaluate_fit_quality: Boolean
+            If True, produce a diagnostic scatterplot of the dispersion-solution fit quality for the
+            first image in the filelist. Detected PSFlet peaks are matched to the nearest
+            calculated PSFlet position and colored by that distance, helping to visualize fit
+            accuracy as a function of position on the sensor. Default: False
 
 
     Notes
@@ -1173,6 +1269,18 @@ def buildcalibrations(
     if readImgs:
         for i, filepath in enumerate(filelist):
             im = Image(filename=filepath)
+            plt.close('all')
+
+            # Optionally crop every ingested image to the requested fitting window before any
+            # statistics, masking, or PSFlet location is performed. The mask is full-frame, so it
+            # is sliced to the same region to keep im.data * mask shape-consistent in locatePSFlets.
+            if fitting_window is not None:
+                xmin, xmax, ymin, ymax = fitting_window
+                im.data = im.data[ymin:ymax, xmin:xmax]
+                mask_use = mask[ymin:ymax, xmin:xmax]
+            else:
+                mask_use = mask
+
             mean, median, std = sigma_clipped_stats(im.data, sigma=3.0, maxiters=5)
             log.info('Mean, median, std: {:}'.format((mean, median, std)))
 
@@ -1182,12 +1290,38 @@ def buildcalibrations(
             # mask *= (im.data-median>3*std)
             imlist += [im]
             if genwavelengthsol:
-                # wavelength calibration step from CHARIS
-                x, y, good, coef = locatePSFlets(im, polyorder=order, mask=mask, sig=1., 
-                                    coef=coef, phi=par.philens, 
+                # wavelength calibration step from CHARIS. Note that when a fitting_window is used,
+                # the returned positions and coefficients are in the cropped coordinate frame; the
+                # working copies (coef, x, y) are kept in that frame so the chained guess for the
+                # next wavelength and the finecal cutouts below stay consistent with the cropped
+                # im.data.
+                x, y, good, coef = locatePSFlets(im, polyorder=order, mask=mask_use, sig=1.,
+                                    coef=coef, phi=par.philens,
                                     scale=par.pitch / par.pixsize, nlens=par.nlens,
                                     trimfrac=trimfrac)
-                allcoef += [[lamlist[i]] + list(coef)]
+
+                # Offset the coefficients back into full-frame detector coordinates for storage so
+                # that lamsol.dat remains valid for uncropped science data. A pure origin shift only
+                # affects the two constant (translation) terms of the polynomial.
+                if fitting_window is not None:
+                    half_coef = (order + 1) * (order + 2) // 2
+                    coef_fullframe = list(coef)
+                    coef_fullframe[0] += xmin
+                    coef_fullframe[half_coef] += ymin
+                else:
+                    coef_fullframe = list(coef)
+                allcoef += [[lamlist[i]] + list(coef_fullframe)]
+
+                # Evaluate the dispersion-solution fit quality for the first image only. The
+                # detected peaks (from the cropped im.data) and the calculated positions are both
+                # offset into full-frame detector coordinates so the diagnostic plot matches the
+                # convention of the other calibration outputs.
+                if evaluate_fit_quality:
+                    x_offset = fitting_window[0] if fitting_window is not None else 0
+                    y_offset = fitting_window[2] if fitting_window is not None else 0
+                    evaluate_dispersion_solution_fit_quality(
+                        im.data, x + x_offset, y + y_offset, median, std, outdir,
+                        lam=lamlist[i], x_offset=x_offset, y_offset=y_offset)
 
                 if finecal:
                     log.info('Finding individual centroids (experimental)')
@@ -1634,13 +1768,15 @@ def derivative_of_lamsol_at_wavelength(lenslet_ind_x, lenslet_ind_y, lamsol_df, 
         dpoly = poly.deriv()  # Derivative of the polynomial
         coefficient_derivatives.append(dpoly(wavelength))  # Evaluate the derivative at the specified wavelength
 
-        # Optionally, plot the best-fit polynomial and the data points
+        # Optionally, fill out the mosaic with the best-fit polynomial and the data points
         if plot_mosaic:
             ax[i // (nrows + 1), i % ncols].scatter(lamsol_df[0], lamsol_df[col], label='Data')
             ax[i // (nrows + 1), i % ncols].plot(lamsol_df[0], poly(lamsol_df[0]), 'r--', label='Best-fit')
-            ax[i // (nrows + 1), i % ncols].set_title(f'Coefficient {i}')
+            # ax[i // (nrows + 1), i % ncols].set_title(f'Coefficient {i}')
+            ax[i // (nrows + 1), i % ncols].set_title(f'Coefficient {i}, X^{i // (order +1)} Y^{i % (order + 1)}')
     if plot_mosaic:
         fig.tight_layout()
+        plt.show(block=False)
 
     # Create some blank arrays that we will fill in with dx/dlambda and dy/dlambda values
     dx_dlambda = np.zeros(np.asarray(lenslet_ind_x).shape)
@@ -1650,6 +1786,8 @@ def derivative_of_lamsol_at_wavelength(lenslet_ind_x, lenslet_ind_y, lamsol_df, 
     i = 0
     for ix in range(order + 1):
         for iy in range(order - ix + 1):
+            # term_to_add = coefficient_derivatives[i] * lenslet_ind_x**ix * lenslet_ind_y**iy
+            # print(f'Coefficient {i} (X^{ix} Y^{iy}) -> {term_to_add}')
             dx_dlambda += coefficient_derivatives[i] * lenslet_ind_x**ix * lenslet_ind_y**iy
             # print(f'X^{ix} Y^{iy} -> {coefficient_derivatives[i] * lenslet_ind_x**ix * lenslet_ind_y**iy}')
             i += 1
@@ -1658,6 +1796,10 @@ def derivative_of_lamsol_at_wavelength(lenslet_ind_x, lenslet_ind_y, lamsol_df, 
             dy_dlambda += coefficient_derivatives[i] * lenslet_ind_x**ix * lenslet_ind_y**iy
             # print(f'X^{ix} Y^{iy} -> {coefficient_derivatives[i] * lenslet_ind_x**ix * lenslet_ind_y**iy}')
             i += 1
+    
+    # TEMPORARY, TO BE DELETED. Just making sure we can calculate the powers on the x/y terms 
+    # for i in range(20):
+    #     print(f'Coefficient {i}: X^{i // (order +1)} Y^{i % ((order + 1) - i // (order +1))}')
 
     return dx_dlambda, dy_dlambda
 
@@ -1849,36 +1991,153 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
                     f"Allowed lenslet coordinates are [{-nlens // 2}, {nlens // 2 - 1}] on each axis."
                 )
 
+            # if (wavelength == lamsol_df[0].iloc[0]) and (lenslet_key == lenslet_keys[0]):
+            #     plot_mosaic = True
+            # else:
+            #     plot_mosaic = False
             dx_dlambda, dy_dlambda = derivative_of_lamsol_at_wavelength(
                 lenslet_x,
                 lenslet_y,
                 lamsol_df,
                 wavelength,
-                lamsol_fit_order=lamsol_fit_order
+                lamsol_fit_order=lamsol_fit_order,
+                plot_mosaic=False
             )
             dispersion_nm_per_pix = 1 / np.sqrt(dx_dlambda**2 + dy_dlambda**2)
             dispersion_by_lenslet[lenslet_key].append(dispersion_nm_per_pix)
 
-    fig, ax = plt.subplots(figsize=(5, 4))
+    # Compute a single representative pixel position per lenslet at the median wavelength
+    mid_wavelength = lamsol_df[0].iloc[len(lamsol_df) // 2]
+    mid_coef = lamsol_df.loc[(lamsol_df[0] - mid_wavelength).abs().idxmin()].values[1:]
+    lenslet_pixel_positions = {}
     for lenslet_key in lenslet_keys:
-        ax.plot(
+        lenslet_x, lenslet_y = lenslet_key
+        px, py = transform(lenslet_x, lenslet_y, order=order, coef=mid_coef)
+        lenslet_pixel_positions[lenslet_key] = (float(px), float(py))
+
+    fig, (ax_disp, ax_pos) = plt.subplots(1, 2, figsize=(10, 4))
+
+    colors = plt.cm.tab10.colors
+    for i, lenslet_key in enumerate(lenslet_keys):
+        color = colors[i % len(colors)]
+        ax_disp.plot(
             lamsol_df[0],
             dispersion_by_lenslet[lenslet_key],
-            label=f'Lenslet {list(lenslet_key)}'
+            label=f'Lenslet {list(lenslet_key)}',
+            color=color
         )
-    ax.set_xlabel('Wavelength (nm)')
-    ax.set_ylabel('Dispersion (nm/pixel)')
-    ax.set_title('Dispersion vs. Wavelength')
-    ax.grid(True, alpha=0.3)
-    # if len(lenslet_keys) > 1:
-    legend = ax.legend()
+        px, py = lenslet_pixel_positions[lenslet_key]
+        ax_pos.scatter(px, py, color=color, s=60, label=f'Lenslet {list(lenslet_key)}', zorder=3)
+
+    ax_disp.set_xlabel('Wavelength (nm)')
+    ax_disp.set_ylabel('Dispersion (nm/pixel)')
+    ax_disp.set_title('Dispersion vs. Wavelength')
+    ax_disp.grid(True, alpha=0.3)
+    legend = ax_disp.legend()
     legend.set_zorder(1000)
+
+    ax_pos.set_xlabel('Detector X (pixels)')
+    ax_pos.set_ylabel('Detector Y (pixels)')
+    ax_pos.set_title('Lenslet Positions')
+    ax_pos.set_aspect('equal')
+    if lenslet_pixel_positions:
+        all_px = [v[0] for v in lenslet_pixel_positions.values()]
+        all_py = [v[1] for v in lenslet_pixel_positions.values()]
+        x_margin = max((max(all_px) - min(all_px)) * 0.05, 1)
+        y_margin = max((max(all_py) - min(all_py)) * 0.05, 1)
+        ax_pos.set_xlim(min(all_px) - x_margin, max(all_px) + x_margin)
+        ax_pos.set_ylim(min(all_py) - y_margin, max(all_py) + y_margin)
+    legend_pos = ax_pos.legend()
+    legend_pos.set_zorder(1000)
     fig.tight_layout()
     plt.show(block=False)
     plt.pause(0.1)
-    
+
     if output_directory is not None:
         filename = os.path.join(output_directory, f'dispersion_vs_wavelength.png')
+        fig.savefig(filename, dpi=300, bbox_inches='tight')
+
+    #########################################################################
+    # Plot per-lenslet spectral-trace clocking angle
+    #########################################################################
+    # For each lenslet, the set of (x, y) positions across all wavelengths traces a near-linear
+    # spectral trace on the detector. We fit the principal axis of that point set (total least
+    # squares / PCA) and report its clocking angle relative to the detector x-axis.
+    #
+    # x_tracks / y_tracks: 2-D arrays, shape (n_wavelengths, n_lenslets_flat).
+    #   Row i   = detector pixel positions of every lenslet at wavelength i.
+    #   Column j = the pixel track of lenslet j across all wavelengths (its spectral trace).
+    # The lenslet ordering is identical at every wavelength (ravel of the same lenslet grid),
+    # so column j always refers to the same physical lenslet.
+    x_tracks = []
+    y_tracks = []
+    for _, row in lamsol_df.iterrows():
+        coef_row = row.values[1:]  # polynomial coefficients for this wavelength (skip col 0 = wavelength)
+        xt, yt = transform(lenslet_ind_x, lenslet_ind_y, order=order, coef=coef_row)
+        x_tracks.append(xt.ravel())  # flatten the 2-D lenslet grid to a 1-D vector
+        y_tracks.append(yt.ravel())
+    x_tracks = np.array(x_tracks)  # shape: (n_wavelengths, n_lenslets_flat)
+    y_tracks = np.array(y_tracks)  # shape: (n_wavelengths, n_lenslets_flat)
+
+    # Mean-subtract each lenslet's track along the wavelength axis so the covariance terms are
+    # centred on the trace midpoint rather than on the detector origin.
+    # x_centered[i, j] = how far lenslet j's x position at wavelength i deviates from its mean x.
+    x_centered = x_tracks - x_tracks.mean(axis=0)  # shape: (n_wavelengths, n_lenslets_flat)
+    y_centered = y_tracks - y_tracks.mean(axis=0)
+
+    # Per-lenslet 2×2 scatter-matrix elements, summed over the wavelength axis.
+    # Sxx[j] = sum_i (x_i - x_mean)^2  for lenslet j  (variance in x across wavelengths)
+    # Syy[j] = sum_i (y_i - y_mean)^2  for lenslet j  (variance in y)
+    # Sxy[j] = sum_i (x_i - x_mean)(y_i - y_mean)  (cross-term; non-zero for tilted traces)
+    Sxx = np.sum(x_centered**2, axis=0)   # shape: (n_lenslets_flat,)
+    Syy = np.sum(y_centered**2, axis=0)
+    Sxy = np.sum(x_centered * y_centered, axis=0)
+
+    # Principal-axis angle via the closed-form 2×2 eigenvector formula.
+    # For a 2×2 symmetric matrix [[Sxx, Sxy], [Sxy, Syy]], the dominant eigenvector direction is
+    #   theta = 0.5 * arctan2(2*Sxy, Sxx - Syy)
+    # which gives the orientation of the elongated axis of the point cloud, i.e. the trace tilt.
+    # Result is in [-90°, 90°], so near-horizontal traces land close to 0°.
+    clocking_angle_rad = 0.5 * np.arctan2(2.0 * Sxy, Sxx - Syy)
+    clocking_angle_deg = np.degrees(clocking_angle_rad)  # shape: (n_lenslets_flat,)
+
+    # Representative pixel position of each lenslet at the median wavelength (mid_coef from above).
+    # Each scatter point is plotted at the lenslet's mid-wavelength detector position so the map
+    # reflects where each trace physically sits on the sensor.
+    x_mid, y_mid = transform(lenslet_ind_x, lenslet_ind_y, order=order, coef=mid_coef)
+    x_mid = x_mid.ravel()  # shape: (n_lenslets_flat,) — matches clocking_angle_deg
+    y_mid = y_mid.ravel()
+
+    # Boolean mask selecting only the lenslets whose mid-wavelength position falls inside the
+    # plotting bounds; used to scale the colormap symmetrically to the visible region rather than
+    # to outliers at the detector edge or outside the crop window.
+    clocking_bounds_mask = \
+        (x_mid >= xmin_plot) & (x_mid <= xmax_plot) & \
+        (y_mid >= ymin_plot) & (y_mid <= ymax_plot)
+    if clocking_bounds_mask.any():
+        angle_extent = np.max(np.abs(clocking_angle_deg[clocking_bounds_mask]))
+    else:
+        angle_extent = np.max(np.abs(clocking_angle_deg)) if clocking_angle_deg.size else 1.0
+    # vmin/vmax are equal and opposite so the zero-clocking colour (white in RdBu_r) maps to 0°.
+    vmin_angle, vmax_angle = -angle_extent, angle_extent
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    scatter = ax.scatter(x_mid, y_mid, c=clocking_angle_deg, s=20, cmap='RdBu_r',
+                         vmin=vmin_angle, vmax=vmax_angle)
+    cbar = fig.colorbar(scatter, ax=ax)
+    cbar.set_label('Clocking angle (degrees)')
+    ax.set_xlim(xmin_plot, xmax_plot)
+    ax.set_ylim(ymin_plot, ymax_plot)
+    ax.set_aspect('equal')
+    ax.set_xlabel('Detector X (pixels)')
+    ax.set_ylabel('Detector Y (pixels)')
+    ax.set_title('Spectral Trace Clocking Angle')
+    fig.tight_layout()
+    plt.show(block=False)
+    plt.pause(0.1)
+
+    if output_directory is not None:
+        filename = os.path.join(output_directory, 'trace_clocking_angle.png')
         fig.savefig(filename, dpi=300, bbox_inches='tight')
 
     #########################################################################
@@ -1929,7 +2188,7 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         ]
         fig, ax = plt.subplots(figsize=(6, 5))
         scatter = ax.scatter(region_df['x'], region_df['y'],
-                             c=region_df['wavelength'], s=5, cmap='viridis')
+                             c=region_df['wavelength'], s=20, cmap='viridis')
         cbar = fig.colorbar(scatter, ax=ax)
         cbar.set_label('Wavelength (nm)')
         ax.set_xlim(cx - half, cx + half)
@@ -1937,7 +2196,7 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         ax.set_aspect('equal')
         ax.set_xlabel('Detector X (pixels)')
         ax.set_ylabel('Detector Y (pixels)')
-        ax.set_title(f'Lenslet + Wavelength Map\n(region center: {cx:.0f}, {cy:.0f})')
+        ax.set_title(f'PSFlet Map\n(region center: {cx:.0f}, {cy:.0f})')
         fig.tight_layout()
         plt.show(block=False)
         plt.pause(0.1)

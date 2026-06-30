@@ -1140,7 +1140,7 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
 
     if not res.success:
         log.info("WARNING: Optimizing PSFlet location transformation coefficients may have failed for frame " + inImage.filename)
-    _x, _y = transform(lenslet_ind_x, lenslet_ind_y, polyorder, coef_optimized)
+    _x, _y = transform(lenslet_ind_x, lenslet_ind_y, polyorder, coef_optimized)  # Calculate best-fit PSFlet locations with the optimized transformation coefficients
 
     # Display a plot of the PSFlet locations after final optimization, if desired
     if show_plots:
