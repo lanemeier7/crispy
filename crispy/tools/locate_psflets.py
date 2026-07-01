@@ -495,11 +495,11 @@ def initcoef(order, scale, phi, x0=0, y0=0):
     coef = np.zeros((n))
 
     coef[0] = x0
-    coef[1] = scale * np.cos(phi)
-    coef[order + 1] = -scale * np.sin(phi)
+    coef[1] = -scale * np.sin(phi)
+    coef[order + 1] = scale * np.cos(phi)
     coef[n // 2] = y0
-    coef[n // 2 + 1] = scale * np.sin(phi)
-    coef[n // 2 + order + 1] = scale * np.cos(phi)
+    coef[n // 2 + 1] = scale * np.cos(phi)
+    coef[n // 2 + order + 1] = scale * np.sin(phi)
 
     return list(coef)
 
