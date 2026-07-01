@@ -12,6 +12,7 @@ from shutil import copy2
 from scipy.special import erf
 from crispy.tools.reduction import calculateWaveList
 import matplotlib.pyplot as plt
+from matplotlib.collections import PatchCollection
 from scipy import ndimage
 import multiprocessing
 import time
@@ -55,14 +56,13 @@ def do_inspection(par, image, xpos, ypos, lam, display_plot=False):
 
     Saves a PNG image in the directory specified in the 'par' object showing 
     PSFlet positions as blue circles overlaid on the grayscale calibration image.
-    """
+    
+"""
 
     log.info(f'Generating inspection image for calibration image at {lam} nm')
     xg, yg = xpos.shape
     vals = np.array([(xpos[m, n], ypos[m, n])
                      for m in range(xg) for n in range(yg)])
-    # pos = (vals[:, 0], vals[:, 1])
-    # aps = CircularAperture(pos, r=3)
 
     # Temporarily turn off interactive plotting until this function is complete
     if not display_plot:
@@ -73,10 +73,9 @@ def do_inspection(par, image, xpos, ypos, lam, display_plot=False):
     std = np.std(image)
     norm = mpl.colors.Normalize(vmin=mean, vmax=mean + 5 * std)
     ax.imshow(image, cmap='gray_r', norm=norm, interpolation='nearest', origin='lower')
-    for val in vals:
-        circle = plt.Circle(val, 3, color='blue', lw=1, alpha=0.5)
-        ax.add_artist(circle)
-    # aps.plot(ax=ax,color='blue', lw=1, alpha=0.5)
+    patches = [plt.Circle(val, 3) for val in vals]
+    collection = PatchCollection(patches, color='blue', lw=1, alpha=0.5)
+    ax.add_collection(collection)
     fig.savefig(os.path.join(par.outdir, 'inspection_%3d.png' % (lam)), dpi=600)
 
     if display_plot:
@@ -1023,7 +1022,7 @@ def evaluate_dispersion_solution_fit_quality(image_data, x_calc, y_calc,
         vmax = 2 * np.percentile(distances_plot,75)
 
     fig, ax = plt.subplots(figsize=(6, 5))
-    scatter = ax.scatter(x_plot, y_plot, c=distances_plot, s=5, vmax=vmax)
+    scatter = ax.scatter(x_plot, y_plot, c=distances_plot, s=8, vmax=vmax)
     cbar = fig.colorbar(scatter, ax=ax)
     cbar.set_label(f'Distance between PSFlet centers\n(measured vs. calculated via fit) ({unit_abbr})')
     ax.set_aspect('equal')
@@ -2178,6 +2177,7 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         (y_positions_low >= ymin_plot) & (y_positions_low <= ymax_plot)
     vmin_trace = trace_lengths[trace_bounds_mask].min() if trace_bounds_mask.any() else None
     vmax_trace = trace_lengths[trace_bounds_mask].max() if trace_bounds_mask.any() else None
+
 
     fig, ax = plt.subplots(figsize=(6, 5))
     scatter = ax.scatter(x_positions_low, y_positions_low, c=trace_lengths, 

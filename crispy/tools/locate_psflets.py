@@ -521,7 +521,7 @@ def transform(x, y, order, coef):
         List of the coefficients.  Must match the length required by order = (order+1)*(order+2).  
         For example, coefficient terms are arranged as follows for the case when order=3:
         [element of coef array]: [term in polynomial]
-        (Terms for _x)
+        (Terms for determining _x coordinates)
         0: x^0 * y^0
         1: x^0 * y^1
         2: x^0 * y^2
@@ -532,7 +532,7 @@ def transform(x, y, order, coef):
         7: x^2 * y^0
         8: x^2 * y^1
         9: x^3 * y^0
-        (Terms for _y)
+        (Terms for determining _y coordinates)
         10: x^0 * y^0
         11: x^0 * y^1
         12: x^0 * y^2
