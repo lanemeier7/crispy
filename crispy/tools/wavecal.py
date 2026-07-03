@@ -1793,8 +1793,8 @@ def derivative_of_lamsol_at_wavelength(lenslet_ind_x, lenslet_ind_y, lamsol_df, 
         if plot_mosaic:
             ax[i // (nrows + 1), i % ncols].scatter(lamsol_df[0], lamsol_df[col], label='Data')
             ax[i // (nrows + 1), i % ncols].plot(lamsol_df[0], poly(lamsol_df[0]), 'r--', label='Best-fit')
-            # ax[i // (nrows + 1), i % ncols].set_title(f'Coefficient {i}')
-            ax[i // (nrows + 1), i % ncols].set_title(f'Coefficient {i}, X^{i // (order +1)} Y^{i % (order + 1)}')
+            ax[i // (nrows + 1), i % ncols].set_title(f'Coefficient {i}')
+            # WRONG, DO NOT USE: ax[i // (nrows + 1), i % ncols].set_title(f'Coefficient {i}, X^{i // (order +1)} Y^{i % (order + 1)}')
     if plot_mosaic:
         fig.tight_layout()
         plt.show(block=False)
@@ -2233,9 +2233,65 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
             fig.savefig(filename, dpi=300, bbox_inches='tight')
 
     #########################################################################
+    # Plot PSF centroid position vs. wavelength for user-specified lenslets
+    #########################################################################
+    sort_idx = np.argsort(lamsol_df[0].values)
+    sorted_wavelengths = lamsol_df[0].values[sort_idx]
+
+    x_positions_by_lenslet = {}
+    y_positions_by_lenslet = {}
+    for lenslet_key in lenslet_keys:
+        lenslet_x, lenslet_y = lenslet_key
+        flat_idx = np.where(
+            (lenslet_ind_x.ravel() == lenslet_x) & (lenslet_ind_y.ravel() == lenslet_y)
+        )[0]
+        if len(flat_idx) == 0:
+            raise ValueError(
+                f"Lenslet {list(lenslet_key)} not found in lenslet grid for nlens={nlens}. "
+                f"Allowed lenslet coordinates are [{-(nlens // 2) + 1}, {nlens // 2}] on each axis."
+            )
+        flat_idx = flat_idx[0]
+        x_pos = x_tracks[:, flat_idx][sort_idx]
+        y_pos = y_tracks[:, flat_idx][sort_idx]
+        x_positions_by_lenslet[lenslet_key] = x_pos - x_pos[0]
+        y_positions_by_lenslet[lenslet_key] = y_pos - y_pos[0]
+
+    fig, ax_left = plt.subplots(figsize=(7, 5))
+    ax_right = ax_left.twinx()
+
+    for i, lenslet_key in enumerate(lenslet_keys):
+        color = colors[i % len(colors)]
+        ax_left.plot(sorted_wavelengths, x_positions_by_lenslet[lenslet_key],
+                     color=color, label=f'ΔX lenslet {list(lenslet_key)}', zorder=10)
+        ax_right.plot(sorted_wavelengths, y_positions_by_lenslet[lenslet_key],
+                      color=color, linestyle='--', label=f'ΔY lenslet {list(lenslet_key)}', zorder=10)
+
+    ax_left.set_xlabel('Wavelength (nm)')
+    ax_left.set_ylabel('ΔX position (pixels)')
+    ax_right.set_ylabel('ΔY position (pixels)')
+    ax_left.tick_params(axis='y')
+    ax_right.tick_params(axis='y')
+    ax_left.set_title('PSFlet position vs. wavelength')
+    ax_left.grid(True, alpha=0.3)
+
+    left_handles, left_labels = ax_left.get_legend_handles_labels()
+    right_handles, right_labels = ax_right.get_legend_handles_labels()
+    legend = fig.legend(left_handles + right_handles, left_labels + right_labels,
+                        framealpha=1.0, loc='center left', bbox_to_anchor=(1.15, 0.5),
+                        bbox_transform=ax_right.transAxes)
+    legend.set_zorder(1000)
+    fig.tight_layout(rect=[0, 0, 0.72, 1])
+    plt.show(block=False)
+    plt.pause(0.1)
+
+    if output_directory is not None:
+        filename = os.path.join(output_directory, 'psflet_position_vs_wavelength.png')
+        fig.savefig(filename, dpi=300, bbox_inches='tight')
+
+    #########################################################################
     # Return final dispersion values for each lenslet, along with the wavelength array
     #########################################################################
-    
+
     if len(lenslet_keys) == 1:
         return lamsol_df[0].values, np.array(dispersion_by_lenslet[lenslet_keys[0]])
 
