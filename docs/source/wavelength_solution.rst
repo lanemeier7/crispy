@@ -43,12 +43,13 @@ places in the codebase this is constructed as:
 
 .. code-block:: python
 
-   x_lens_ind = np.arange(-nlens // 2, nlens // 2)
+   x_lens_ind = np.arange(-nlens // 2, nlens // 2) + 1
    x_lens_ind, y_lens_ind = np.meshgrid(x_lens_ind, x_lens_ind)
 
 That means a lenslet is identified by integer coordinates ``(i, j)`` on the
 lenslet array, and ``lamsol.dat`` tells you where that lenslet lands on the
-detector at a given wavelength.
+detector at a given wavelength. The '+1' ensures that the lenslet indices are centered around 0 for 
+lenslet arrays that contain an odd number of lenslets per side.
 
 Coefficient Ordering
 --------------------

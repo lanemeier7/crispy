@@ -100,7 +100,7 @@ def testReduction(par, name, ifsimage):
 
     # lam in nm
     psftool.geninterparray(lam, allcoef)
-    xindx = np.arange(-nlens / 2, nlens / 2)
+    xindx = np.arange(-nlens / 2, nlens / 2) + 1
     xindx, yindx = np.meshgrid(xindx, xindx)
 
     for iwav in range(len(wavelengths)):

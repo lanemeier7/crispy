@@ -347,8 +347,7 @@ def reduceIFSMap(
         reducedName += '_red_' + method
         cube = lstsqExtract(
             par,
-            os.path.join(par.exportDir,
-            reducedName),
+            os.path.join(par.exportDir, reducedName),
             IFSimage,
             smoothandmask=smoothbad,
             hires=hires,
@@ -589,7 +588,7 @@ def quickMonochromatic(par=None,
         nlens = par.nlens
         npix = par.npix
 
-    xindx = np.arange(-nlens / 2, nlens / 2)
+    xindx = np.arange(-nlens / 2, nlens / 2) + 1
     xindx, yindx = np.meshgrid(xindx, xindx)
 
     Xc, Yc = transform(xindx, yindx, order, coefs)
