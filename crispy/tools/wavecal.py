@@ -2310,24 +2310,27 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
                 ('good', hdulist[4].data),      # 2D: on-detector validity flag
             ]
 
-        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        fig, axes = plt.subplots(2, 3, figsize=(15, 9))
+        fig.suptitle('PSFloc.fits snapshot (one slice through each extension)')
         axes_flat = axes.ravel()
-        for ax, (name, data) in zip(axes_flat, psfloc_extensions):
+        for idx, (ax, (name, data)) in enumerate(zip(axes_flat, psfloc_extensions)):
             if data.ndim == 3:
                 # Display the middle nlens x nlens slice of the stack.
                 mid_slice = data.shape[2] // 2
                 slice_2d = data[:, :, mid_slice]
-                title = f'{name} (slice {mid_slice} / {data.shape[2] - 1})'
+                title = f'Extension {idx}\n{name} (slice {mid_slice} / {data.shape[2] - 1})'
             else:
                 slice_2d = data
-                title = name
+                title = f'Extension {idx}\n{name}'
             if not any(keyword in title for keyword in ['xindx','yindx']):
                 vmin = 0.9 * np.max(slice_2d)
-            else: 
+            else:
                 vmin = 0
             im = ax.imshow(slice_2d, origin='lower', vmin=vmin)
             fig.colorbar(im, ax=ax)
             ax.set_title(title)
+            ax.set_xlabel('lenslet index')
+            ax.set_ylabel('lenslet index')
 
         # Hide the unused 6th panel (2x3 grid, only 5 extensions).
         axes_flat[5].axis('off')
