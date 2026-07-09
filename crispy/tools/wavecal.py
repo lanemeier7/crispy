@@ -2289,6 +2289,57 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         fig.savefig(filename, dpi=300, bbox_inches='tight')
 
     #########################################################################
+    # PSFLoc.fits visualization
+    #########################################################################
+    # PSFloc.fits is a sibling calibration product of lamsol.dat, written by PSFLets.savepixsol().
+    # It stores, per lenslet, the detector pixel positions/wavelengths of each microspectrum along with
+    # a valid-wavelength count and an on-detector validity flag. It may or may not be present in the
+    # calibration directory, so skip this section gracefully if the file is absent.
+    psfloc_filepath = os.path.join(os.path.dirname(lamsol_filepath), 'PSFloc.fits')
+    if not os.path.isfile(psfloc_filepath):
+        print(f'PSFloc.fits not found at {psfloc_filepath}; skipping PSFLoc.fits visualization.')
+    else:
+        # Read the 5 extensions by index (extension 0 is the PrimaryHDU with no EXTNAME), matching the
+        # index-based access convention in PSFLets.loadpixsol().
+        with fits.open(psfloc_filepath) as hdulist:
+            psfloc_extensions = [
+                ('lam_indx', hdulist[0].data),  # 3D: wavelength at each microspectrum pixel
+                ('xindx', hdulist[1].data),     # 3D: dispersion-axis pixel index
+                ('yindx', hdulist[2].data),     # 3D: cross-dispersion pixel position
+                ('nlam', hdulist[3].data),      # 2D: number of valid wavelengths per lenslet
+                ('good', hdulist[4].data),      # 2D: on-detector validity flag
+            ]
+
+        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        axes_flat = axes.ravel()
+        for ax, (name, data) in zip(axes_flat, psfloc_extensions):
+            if data.ndim == 3:
+                # Display the middle nlens x nlens slice of the stack.
+                mid_slice = data.shape[2] // 2
+                slice_2d = data[:, :, mid_slice]
+                title = f'{name} (slice {mid_slice} / {data.shape[2] - 1})'
+            else:
+                slice_2d = data
+                title = name
+            if not any(keyword in title for keyword in ['xindx','yindx']):
+                vmin = 0.9 * np.max(slice_2d)
+            else: 
+                vmin = 0
+            im = ax.imshow(slice_2d, origin='lower', vmin=vmin)
+            fig.colorbar(im, ax=ax)
+            ax.set_title(title)
+
+        # Hide the unused 6th panel (2x3 grid, only 5 extensions).
+        axes_flat[5].axis('off')
+        fig.tight_layout()
+        plt.show(block=False)
+        plt.pause(0.1)
+
+        if output_directory is not None:
+            filename = os.path.join(output_directory, 'PSFloc_snapshot.png')
+            fig.savefig(filename, dpi=300, bbox_inches='tight')
+
+    #########################################################################
     # Return final dispersion values for each lenslet, along with the wavelength array
     #########################################################################
 
