@@ -1075,7 +1075,6 @@ def buildcalibrations(
         snrthreshold=10,
         initcoef=None,
         readImgs=True,
-        fitting_window=None,
         evaluate_fit_quality=False):
     """
     Master wavelength calibration function that generates all files required to process IFS cubes.
@@ -1172,12 +1171,13 @@ def buildcalibrations(
     initcoef: numpy array
             Coefficient array corresponding to an initial guess of the polynomial map. Leave to None
             in order to start from scratch.
-    fitting_window: list of int (optional)
+    par.fitting_window: list of int (optional par attribute)
             [xmin, xmax, ymin, ymax] region (in full-frame detector pixels) to crop all ingested
             images to before they are passed to locatePSFlets(). Restricts the PSFlet fit to a
             sub-region of the sensor. The returned positions and polynomial coefficients are
             offset back into full-frame detector coordinates, so lamsol.dat remains compatible with
-            uncropped science data. If None (default), the full image is used.
+            uncropped science data. Read from the optional par.fitting_window attribute; if it is
+            not set on par, the full image is used.
     evaluate_fit_quality: Boolean
             If True, produce a diagnostic scatterplot of the dispersion-solution fit quality for the
             first image in the filelist. Detected PSFlet peaks are matched to the nearest
@@ -1232,6 +1232,10 @@ def buildcalibrations(
                 - a boolean array indicating whether each lenslet is good or not (e.g. when it is outside of the detector area)
 
     """
+    # Optional detector crop region [xmin, xmax, ymin, ymax] for the PSFlet fit.
+    # Not set by default; travels on par when the caller wants a sub-region fit.
+    fitting_window = par.fitting_window if hasattr(par, 'fitting_window') else None
+
     if par.outdir is not None:
         outdir = par.outdir
     else:
@@ -1458,8 +1462,7 @@ def buildcalibrations(
         lam1=lam1 / 1.01,
         lam2=lam2 * 1.01,
         borderpix=borderpix,
-        finexy=finexy,
-        fitting_window=fitting_window)
+        finexy=finexy)
     psftool.savepixsol(outdir=outdir)
 #     else:
 #         log.info("Loading previous wavelength calibration (PSFloc.fits)")
@@ -2304,17 +2307,17 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         # index-based access convention in PSFLets.loadpixsol().
         with fits.open(psfloc_filepath) as hdulist:
             psfloc_extensions = [
-                ('lam_indx', hdulist[0].data),  # 3D: wavelength at each microspectrum pixel
-                ('xindx', hdulist[1].data),     # 3D: dispersion-axis pixel index
-                ('yindx', hdulist[2].data),     # 3D: cross-dispersion pixel position
-                ('nlam', hdulist[3].data),      # 2D: number of valid wavelengths per lenslet
-                ('good', hdulist[4].data),      # 2D: on-detector validity flag
+                ('lam_indx', hdulist[0].data, 'Wavelength (nm)'),  # 3D: wavelength at each microspectrum pixel
+                ('xindx', hdulist[1].data, 'X-coordinate (pixels)'),     # 3D: dispersion-axis pixel index
+                ('yindx', hdulist[2].data, 'Y-coordinate (pixels)'),     # 3D: cross-dispersion pixel position
+                ('nlam', hdulist[3].data, 'Number of wavelength bins'),      # 2D: number of valid wavelengths per lenslet
+                ('good', hdulist[4].data, 'On-detector validity flag'),      # 2D: on-detector validity flag
             ]
 
         fig, axes = plt.subplots(2, 3, figsize=(15, 9))
         fig.suptitle('PSFloc.fits snapshot (one slice through each extension)')
         axes_flat = axes.ravel()
-        for idx, (ax, (name, data)) in enumerate(zip(axes_flat, psfloc_extensions)):
+        for idx, (ax, (name, data, cbar_label)) in enumerate(zip(axes_flat, psfloc_extensions)):
             if data.ndim == 3:
                 # Display the middle nlens x nlens slice of the stack.
                 mid_slice = data.shape[2] // 2
@@ -2323,12 +2326,13 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
             else:
                 slice_2d = data
                 title = f'Extension {idx}\n{name}'
-            if not any(keyword in title for keyword in ['xindx','yindx']):
+            if not any(keyword in title for keyword in ['xindx','yindx','good']):
                 vmin = 0.9 * np.max(slice_2d)
             else:
                 vmin = 0
             im = ax.imshow(slice_2d, origin='lower', vmin=vmin)
-            fig.colorbar(im, ax=ax)
+            cbar = fig.colorbar(im, ax=ax)
+            cbar.set_label(cbar_label)
             ax.set_title(title)
             ax.set_xlabel('lenslet index')
             ax.set_ylabel('lenslet index')

@@ -307,8 +307,7 @@ class PSFLets:
             lam1=None,
             lam2=None,
             borderpix=4,
-            finexy=None,
-            fitting_window=None):
+            finexy=None):
         '''
         Calculates the wavelength at the center of each pixel within a microspectrum for all lenslets.
 
@@ -331,9 +330,13 @@ class PSFLets:
             Number of pixels to exclude at the edges of the detector. Default is 4.
         finexy : tuple, optional
             Fine adjustments to x and y positions and SNR threshold.
-        fitting_window : int, optional
-            Size of the fitting window used for wavelength calibration.  Acts as the bounds for determining which lenslets are "good" or not.
-            Default is None.
+
+        Notes on par.fitting_window
+        ---------------------------
+        The bounds used to decide which lenslets are "good" are read from the optional
+        par.fitting_window attribute (not a function argument). When set, it is a list of int
+        [xmin, xmax, ymin, ymax] giving the detector crop region used during wavelength
+        calibration. If par.fitting_window is not set, the full detector (par.npix) is used.
 
         Returns
         -------
@@ -401,6 +404,10 @@ class PSFLets:
         # Apply SNR threshold if fine adjustments are provided
         if finexy is not None:
             good *= finexy[2] > 10
+
+        # Optional detector crop region [xmin, xmax, ymin, ymax] used to determine which
+        # lenslets fall within the valid fitting area. Read from par; None means use par.npix.
+        fitting_window = par.fitting_window if hasattr(par, 'fitting_window') else None
 
         # Process each lenslet
         for ix in range(xindx.shape[0]):
