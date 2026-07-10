@@ -307,7 +307,8 @@ class PSFLets:
             lam1=None,
             lam2=None,
             borderpix=4,
-            finexy=None):
+            finexy=None,
+            fitting_window=None):
         '''
         Calculates the wavelength at the center of each pixel within a microspectrum for all lenslets.
 
@@ -330,6 +331,9 @@ class PSFLets:
             Number of pixels to exclude at the edges of the detector. Default is 4.
         finexy : tuple, optional
             Fine adjustments to x and y positions and SNR threshold.
+        fitting_window : int, optional
+            Size of the fitting window used for wavelength calibration.  Acts as the bounds for determining which lenslets are "good" or not.
+            Default is None.
 
         Returns
         -------
@@ -406,11 +410,18 @@ class PSFLets:
                 pix_y = interp_x[:, ix, iy]
                 pix_x = interp_y[:, ix, iy]
 
-                # Check if lenslet falls within valid detector area
-                if (np.any(pix_x < borderpix) or np.any(pix_x > par.npix - borderpix) or
-                    np.any(pix_y < borderpix) or np.any(pix_y > par.npix - borderpix)):
-                    good[ix, iy] = 0
-                    continue
+                # Make sure that all of the wavelengths fall within the valid detector area
+                if fitting_window is None:
+                    if (np.any(pix_x < borderpix) or np.any(pix_x > par.npix - borderpix) or
+                        np.any(pix_y < borderpix) or np.any(pix_y > par.npix - borderpix)):
+                        good[ix, iy] = 0
+                        continue    
+                else:
+                    # If the wavelength calibration was performed only over a certain region, use those bounds for determining whether the lenslet falls within the valid area
+                    if (np.any(pix_x < fitting_window[2] + borderpix) or np.any(pix_x > fitting_window[3] - borderpix) or
+                        np.any(pix_y < fitting_window[0] + borderpix) or np.any(pix_y > fitting_window[1] - borderpix)):
+                        good[ix, iy] = 0
+                        continue
 
                 # Handle reversed wavelength order
                 if pix_y[-1] < pix_y[0]:

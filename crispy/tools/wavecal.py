@@ -1103,7 +1103,7 @@ def buildcalibrations(
             use the files in par.lamlist
     order: int
             Order of the polynomial used to fit the PSFLet positions across the detector
-    genwavelengthsol: Boolean #TODO, rename all instances of this argument, in all files, to 'save_wavelength_solution'
+    genwavelengthsol: Boolean
             If True, generate the wavelength calibration. Creates a text file with all
             polynomial coefficients that best fit the PSFLet positions at each wavelength.
             If False, then load an already-generated file.
@@ -1458,7 +1458,8 @@ def buildcalibrations(
         lam1=lam1 / 1.01,
         lam2=lam2 * 1.01,
         borderpix=borderpix,
-        finexy=finexy)
+        finexy=finexy,
+        fitting_window=fitting_window)
     psftool.savepixsol(outdir=outdir)
 #     else:
 #         log.info("Loading previous wavelength calibration (PSFloc.fits)")
