@@ -788,6 +788,7 @@ def makeHires(
             tasks.put(None)
         for i in range(len(lam)):
             index, high_res_array = results.get()
+            print(f'  [makeHires] Completed {i + 1} of {len(lam)} wavelengths', flush=True)
             hires_arrs += [high_res_array]
 
             if savehiresimages:
@@ -1633,6 +1634,7 @@ def buildcalibrations(
                 tasks.put(None)
             for i in range(num_wavelengths - 1):
                 index, poly = results.get()
+                print(f'  [makePolychrome] Completed {i + 1} of {num_wavelengths - 1} wavelength bins', flush=True)
                 polyimage[index] = poly * \
                     (lam_endpts[index + 1] - lam_endpts[index])
                 _x, _y = psftool.return_locations(lam_midpts[i], allcoef, xindx, yindx)
@@ -1735,14 +1737,15 @@ def buildcalibrations(
                 tasks.put(None)
             for i in range(num_wavelengths - 1):
                 index, poly = results.get()
+                print(f'  [makeHiresPolychrome] Completed {i + 1} of {num_wavelengths - 1} wavelength bins', flush=True)
                 hirespoly[index] = poly * \
                     (lam_endpts[index + 1] - lam_endpts[index]) / upsample**2
 
         log.info('Saving hi-res polychrome cube')
         out = fits.HDUList(fits.PrimaryHDU(hirespoly.astype(np.float32)))
-        out.writeto(f"{os.path.join(outdir, 'hirespolychromeR{par.R}.fits.gz')}", overwrite=True)
+        out.writeto(f"{os.path.join(outdir, f'hirespolychromeR{par.R}.fits.gz')}", overwrite=True)
         out = fits.HDUList(fits.PrimaryHDU(np.sum(hirespoly, axis=0).astype(np.float32)))
-        out.writeto(f"{os.path.join(outdir, 'hiresPolychromeR{par.R}stack.fits')}", overwrite=True)
+        out.writeto(f"{os.path.join(outdir, f'hiresPolychromeR{par.R}stack.fits')}", overwrite=True)
 
     log.info(f"Total time elapsed: {time.time() - tstart:.0f} s")
 

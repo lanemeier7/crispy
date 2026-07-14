@@ -315,11 +315,11 @@ def reduceIFSMap(
         par.hdr.append(
             ('R', par.R, 'Spectral resolution of final cube'), end=True)
         par.hdr.append(('CALDIR', par.wavecalDir.split(
-            '/')[-2], 'Directory of wavelength solution'), end=True)
+            os.sep)[-2], 'Directory of wavelength solution'), end=True)
 
     if isinstance(IFSimageName, str):
         IFSimage = Image(filename=IFSimageName)
-        reducedName = IFSimageName.split('/')[-1].split('.')[0]
+        reducedName = IFSimageName.split(os.sep)[-1].split('.')[0]
     else:
         IFSimage = Image(data=IFSimageName)
         if name is None:
