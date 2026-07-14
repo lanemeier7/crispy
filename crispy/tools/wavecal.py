@@ -15,12 +15,12 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import PatchCollection
 from scipy import ndimage
 import multiprocessing
+from concurrent.futures import ThreadPoolExecutor
 import time
 import re
 import os
 from crispy.tools.locate_psflets import locatePSFlets, PSFLets, transform, fine_transform
 from crispy.tools.image import Image
-from crispy.tools.par_utils import Task, Consumer
 import matplotlib as mpl
 import numpy as np
 from scipy import signal
@@ -770,38 +770,26 @@ def makeHires(
                 allxpos += [xpos]
                 allypos += [ypos]
                 allgood += [good]
-        tasks = multiprocessing.Queue()
-        results = multiprocessing.Queue()
-        ncpus = multiprocessing.cpu_count()
-        consumers = [Consumer(tasks, results)
-                     for i in range(ncpus)]
-        for w in consumers:
-            w.start()
-
-        for i in range(len(lam)):
+        # Each wavelength's high-res PSFLet is computed on a worker thread. The heavy lifting
+        # (scipy.ndimage) releases the GIL, so threads give real speedup while sharing memory,
+        # avoiding the pickling/spawn hazards of the old multiprocessing.Process pool.
+        def _hires_task(i):
             if par.gaussian_hires:
-                tasks.put(Task(i, get_sim_hires, (par, lam[i], upsample, nsubarr)))
-            else:
-                tasks.put(Task(i, gethires, (allxpos[i], allypos[i], allgood[i], imlist[i], upsample, nsubarr, npix)))
+                return get_sim_hires(par, lam[i], upsample, nsubarr)
+            return gethires(allxpos[i], allypos[i], allgood[i], imlist[i], upsample, nsubarr, npix)
 
-        for i in range(ncpus):
-            tasks.put(None)
-        for i in range(len(lam)):
-            index, high_res_array = results.get()
-            print(f'  [makeHires] Completed {i + 1} of {len(lam)} wavelengths', flush=True)
-            hires_arrs += [high_res_array]
+        # executor.map yields results in submission (wavelength) order, so hires_arrs stays ordered
+        # and lam[i] matches each array.
+        with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+            for i, high_res_array in enumerate(executor.map(_hires_task, range(len(lam)))):
+                print(f'  [makeHires] Completed {i + 1} of {len(lam)} wavelengths', flush=True)
+                hires_arrs += [high_res_array]
 
-            if savehiresimages:
-                di, dj = high_res_array.shape[0], high_res_array.shape[2]
-                outim = np.zeros((di * dj, di * dj))
-                for ii in range(di):
-                    for jj in range(di):
-                        outim[ii * dj:(ii + 1) * dj, jj *
-                              dj:(jj + 1) * dj] = high_res_array[ii, jj]
-                out = fits.HDUList(fits.PrimaryHDU(high_res_array.astype(np.float32)))
-                out.writeto(
-                    os.path.join(par.wavecalDir, 'hires_psflets_lam%d.fits' % (lam[index])),
-                    overwrite=True)
+                if savehiresimages:
+                    out = fits.HDUList(fits.PrimaryHDU(high_res_array.astype(np.float32)))
+                    out.writeto(
+                        os.path.join(par.wavecalDir, 'hires_psflets_lam%d.fits' % (lam[i])),
+                        overwrite=True)
     else:
         log.info('No parallel computation')
         for i in range(len(lam)):
@@ -1605,56 +1593,38 @@ def buildcalibrations(
                 ypos += [_y]
                 good += [_good]
         else:
-            tasks = multiprocessing.Queue()
-            results = multiprocessing.Queue()
-            ncpus = multiprocessing.cpu_count()
-            consumers = [Consumer(tasks, results)
-                         for i in range(ncpus)]
-            for w in consumers:
-                w.start()
+            # Each wavelength bin's polychrome slice is computed on a worker thread. The heavy
+            # numpy/scipy.ndimage work releases the GIL, so threads speed this up while sharing
+            # memory, avoiding the pickling/spawn hazards of the old multiprocessing.Process pool.
+            def _poly_task(i):
+                return make_polychrome(lam_endpts[i], lam_endpts[i + 1], hires_arrs, lam,
+                                       psftool, allcoef, xindx, yindx, ysize,
+                                       xsize, finexy, lam, upsample)
 
-            for i in range(num_wavelengths - 1):
-                tasks.put(Task(i,
-                               make_polychrome,
-                               (lam_endpts[i],
-                                lam_endpts[i + 1],
-                                   hires_arrs,
-                                   lam,
-                                   psftool,
-                                   allcoef,
-                                   xindx,
-                                   yindx,
-                                   ysize,
-                                   xsize,
-                                   finexy,
-                                   lam,
-                                   upsample)))
+            # executor.map yields results in submission order, so index == i throughout.
+            with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+                for i, poly in enumerate(executor.map(_poly_task, range(num_wavelengths - 1))):
+                    print(f'  [makePolychrome] Completed {i + 1} of {num_wavelengths - 1} wavelength bins', flush=True)
+                    polyimage[i] = poly * \
+                        (lam_endpts[i + 1] - lam_endpts[i])
+                    _x, _y = psftool.return_locations(lam_midpts[i], allcoef, xindx, yindx)
+                    if finecal:
+                        _x += finexy[0]
+                        _y += finexy[1]
 
-            for i in range(ncpus):
-                tasks.put(None)
-            for i in range(num_wavelengths - 1):
-                index, poly = results.get()
-                print(f'  [makePolychrome] Completed {i + 1} of {num_wavelengths - 1} wavelength bins', flush=True)
-                polyimage[index] = poly * \
-                    (lam_endpts[index + 1] - lam_endpts[index])
-                _x, _y = psftool.return_locations(lam_midpts[i], allcoef, xindx, yindx)
-                if finecal:
-                    _x += finexy[0]
-                    _y += finexy[1]
-
-                # Append the x/y positions and "good" boolean array to the lists
-                _good = (_x > borderpix) * (_x < xsize - borderpix) * \
-                    (_y > borderpix) * (_y < ysize - borderpix)
-                xpos += [_x]
-                ypos += [_y]
-                good += [_good]
+                    # Append the x/y positions and "good" boolean array to the lists
+                    _good = (_x > borderpix) * (_x < xsize - borderpix) * \
+                        (_y > borderpix) * (_y < ysize - borderpix)
+                    xpos += [_x]
+                    ypos += [_y]
+                    good += [_good]
 
         log.info('Saving polychrome cube')
         polyimage[polyimage < threshold] = 0.0
         out = fits.HDUList(fits.PrimaryHDU(polyimage.astype(np.float32)))
-        out.writeto(f"{os.path.join(outdir, 'polychromeR{par.R}.fits.gz')}", overwrite=True)
+        out.writeto(f"{os.path.join(outdir, f'polychromeR{par.R}.fits.gz')}", overwrite=True)
         out = fits.HDUList(fits.PrimaryHDU(np.sum(polyimage, axis=0).astype(np.float32)))
-        out.writeto(f"{os.path.join(outdir, 'polychromeR{par.R}stack.fits.gz')}", overwrite=True)
+        out.writeto(f"{os.path.join(outdir, f'polychromeR{par.R}stack.fits.gz')}", overwrite=True)
 
     else:
         lam_midpts, lam_endpts = calculateWaveList(par, lam, method='lstsq')
@@ -1710,36 +1680,21 @@ def buildcalibrations(
                                                                                            xsize,
                                                                                            upsample=upsample) / upsample**2
         else:
-            tasks = multiprocessing.Queue()
-            results = multiprocessing.Queue()
-            ncpus = multiprocessing.cpu_count()
-            consumers = [Consumer(tasks, results)
-                         for i in range(ncpus)]
-            for w in consumers:
-                w.start()
+            # Each wavelength bin's high-res polychrome slice is computed on a worker thread. The
+            # heavy numpy/scipy.ndimage work releases the GIL, so threads speed this up while
+            # sharing memory, avoiding the pickling/spawn hazards of the old
+            # multiprocessing.Process pool.
+            def _hirespoly_task(i):
+                return make_hires_polychrome(lam_endpts[i], lam_endpts[i + 1], hires_arrs, lam,
+                                             psftool, allcoef, xindx, yindx,
+                                             ysize, xsize, upsample)
 
-            for i in range(num_wavelengths - 1):
-                tasks.put(Task(i,
-                               make_hires_polychrome,
-                               (lam_endpts[i],
-                                lam_endpts[i + 1],
-                                   hires_arrs,
-                                   lam,
-                                   psftool,
-                                   allcoef,
-                                   xindx,
-                                   yindx,
-                                   ysize,
-                                   xsize,
-                                   upsample)))
-
-            for i in range(ncpus):
-                tasks.put(None)
-            for i in range(num_wavelengths - 1):
-                index, poly = results.get()
-                print(f'  [makeHiresPolychrome] Completed {i + 1} of {num_wavelengths - 1} wavelength bins', flush=True)
-                hirespoly[index] = poly * \
-                    (lam_endpts[index + 1] - lam_endpts[index]) / upsample**2
+            # executor.map yields results in submission order, so index == i throughout.
+            with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+                for i, poly in enumerate(executor.map(_hirespoly_task, range(num_wavelengths - 1))):
+                    print(f'  [makeHiresPolychrome] Completed {i + 1} of {num_wavelengths - 1} wavelength bins', flush=True)
+                    hirespoly[i] = poly * \
+                        (lam_endpts[i + 1] - lam_endpts[i]) / upsample**2
 
         log.info('Saving hi-res polychrome cube')
         out = fits.HDUList(fits.PrimaryHDU(hirespoly.astype(np.float32)))
