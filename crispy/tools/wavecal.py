@@ -2292,8 +2292,8 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
             cbar = fig.colorbar(im, ax=ax)
             cbar.set_label(cbar_label)
             ax.set_title(title)
-            ax.set_xlabel('lenslet index')
-            ax.set_ylabel('lenslet index')
+            ax.set_xlabel('Lenslet Index')
+            ax.set_ylabel('Lenslet Index')
 
         # Hide the unused 6th panel (2x3 grid, only 5 extensions).
         axes_flat[5].axis('off')
@@ -2303,6 +2303,58 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
 
         if output_directory is not None:
             filename = os.path.join(output_directory, 'PSFloc_snapshot.png')
+            fig.savefig(filename, dpi=300, bbox_inches='tight')
+
+    #########################################################################
+    # polychromekeyR<NN>.fits visualization
+    #########################################################################
+    # The polychrome key is a companion calibration product that stores, for each lenslet and wavelength
+    # bin, the expected detector pixel position and an on-detector validity flag. It may or may not be
+    # present in the calibration directory, so skip this section gracefully if absent.
+    import glob as _glob
+    polychrome_candidates = sorted(_glob.glob(os.path.join(os.path.dirname(lamsol_filepath), 'polychromekeyR*.fits')))
+    if not polychrome_candidates:
+        print(f'No polychromekeyR*.fits file found in {os.path.dirname(lamsol_filepath)}; skipping polychrome key visualization.')
+    else:
+        polychrome_filepath = polychrome_candidates[0]
+        with fits.open(polychrome_filepath) as hdulist:
+            lam_midpts   = hdulist[0].data   # 1D: wavelength bin midpoints (nm)
+            xpos_stack   = hdulist[1].data   # 3D (N_lam, nlens, nlens): X pixel position per lenslet/wavelength
+            ypos_stack   = hdulist[2].data   # 3D (N_lam, nlens, nlens): Y pixel position per lenslet/wavelength
+            good_stack   = hdulist[3].data   # 3D (N_lam, nlens, nlens): on-detector validity flag (uint8)
+
+        fname = os.path.basename(polychrome_filepath)
+        fig, axes = plt.subplots(2, 2, figsize=(12, 9))
+        fig.suptitle(f'{fname} snapshot')
+
+        # Extension 0 — wavelength bin midpoints as a connected scatter plot.
+        ax = axes[0, 0]
+        ax.plot(np.arange(len(lam_midpts)), lam_midpts, marker='o', markersize=6)
+        ax.set_title('Extension 0\nlam_midpts')
+        ax.set_xlabel('Bin index')
+        ax.set_ylabel('Wavelength (nm)')
+
+        # Extensions 1–3 — middle wavelength-slice of each 3D stack, displayed as 2D images.
+        mid_slice_index = xpos_stack.shape[0] // 2
+        image_panels = [
+            (axes[0, 1], xpos_stack[mid_slice_index], 'X-coordinate (pixels)', 1),
+            (axes[1, 0], ypos_stack[mid_slice_index], 'Y-coordinate (pixels)', 2),
+            (axes[1, 1], good_stack[mid_slice_index], 'On-detector validity flag', 3),
+        ]
+        for ax, data, cbar_label, ext_idx in image_panels:
+            im = ax.imshow(data, origin='lower')
+            cbar = fig.colorbar(im, ax=ax)
+            cbar.set_label(cbar_label)
+            ax.set_title(f'Extension {ext_idx}\n{cbar_label} (slice {mid_slice_index} / {xpos_stack.shape[0] - 1})')
+            ax.set_xlabel('Lenslet Index')
+            ax.set_ylabel('Lenslet Index')
+
+        fig.tight_layout()
+        plt.show(block=False)
+        plt.pause(0.1)
+
+        if output_directory is not None:
+            filename = os.path.join(output_directory, f'{os.path.splitext(fname)[0]}_snapshot.png')
             fig.savefig(filename, dpi=300, bbox_inches='tight')
 
     #########################################################################
