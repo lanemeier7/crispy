@@ -319,7 +319,7 @@ def reduceIFSMap(
 
     if isinstance(IFSimageName, str):
         IFSimage = Image(filename=IFSimageName)
-        reducedName = IFSimageName.split(os.sep)[-1].split('.')[0]
+        reducedName = os.path.splitext(IFSimageName.split(os.sep)[-1])[0]
     else:
         IFSimage = Image(data=IFSimageName)
         if name is None:
@@ -426,7 +426,7 @@ def reduceIFSMapList(
         # you call the function here, with all its arguments in a list
         for i in range(len(IFSimageNameList)):
             IFSimage = Image(filename=IFSimageNameList[i])
-            reducedName = IFSimageNameList[i].split('/')[-1].split('.')[0]
+            reducedName = os.path.splitext(IFSimageNameList[i].split('/')[-1])[0]
             if method == 'lstsq':
                 reducedName += '_red_lstsq'
                 tasks.put(Task(i, lstsqExtract, (par, os.path.join(par.exportDir, reducedName), IFSimage, smoothbad)))
@@ -445,7 +445,7 @@ def reduceIFSMapList(
     else:
         for i in range(len(IFSimageNameList)):
             IFSimage = Image(filename=IFSimageNameList[i])
-            reducedName = IFSimageNameList[i].split('/')[-1].split('.')[0]
+            reducedName = os.path.splitext(IFSimageNameList[i].split('/')[-1])[0]
             if method == 'lstsq':
                 reducedName += '_red_lstsq'
                 cube = lstsqExtract(par, os.path.join(par.exportDir, reducedName), IFSimage, smoothbad)
