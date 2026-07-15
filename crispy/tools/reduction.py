@@ -192,30 +192,109 @@ def calculateWaveList(par, lam_list=None, num_wavelengths=None, method='lstsq'):
 
 
 def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
-                 refine=False, hires=False, upsample=3, fitbkgnd=False,
+                 hires=False, upsample=3, fitbkgnd=False,
                  specialPolychrome=None, returnall=False, mode='lstsq',
-                 niter=10, pixnoise=0.0, normpsflets=False, gain=1.0,
-                 discard_constant=True):
+                 niter=10, pixnoise=0.0, normpsflets=False, gain=1.0):
     '''
-    Least squares extraction, inspired by T. Brandt and making use of some of his code.
+    Least-squares extraction of an IFS data cube from a raw detector image.
+
+    Every lenslet disperses its light into a short "microspectrum" on the
+    detector. This routine models each microspectrum as a linear combination
+    of monochromatic PSFlet images (the "polychrome" basis built during
+    wavelength calibration) and solves for the per-wavelength coefficients with
+    a weighted least-squares fit (see ``fit_cutout``). The stack of coefficients
+    over all lenslets is the reduced cube. The method is adapted from
+    T. Brandt's CHARIS pipeline.
+
+    A note on the "ivar" naming used throughout: ``ivar`` is short for *inverse
+    variance*, i.e. a statistical weight equal to 1 / variance. A larger value
+    means a more trustworthy measurement; a value of exactly 0 marks a pixel or
+    spectral sample that has been masked out (infinite variance). The inverse
+    variance is carried alongside the data everywhere in crispy (it is a
+    critical attribute of the ``Image`` class).
 
     Parameters
     ----------
     par:    Parameter instance
-            Contains all IFS parameters
-    name: string
-            Name that will be given to final image, without fits extension
+            Contains all IFS parameters (spectral resolution, detector layout,
+            wavelength calibration directory, etc.).
+    name:   string
+            Path and name for output files, without fits extension. Output
+            files will be named ``name.fits``, ``name_resid.fits``, etc.
+            #TODO, good candidate for variable to be renamed. Perhaps to "output_filename_base"?
     ifsimage: Image
-            Image instance of IFS detector map, with optional inverse variance
+            Image instance of the raw IFS detector map, with optional
+            ``ivar`` field (inverse-variance weights).
+    smoothandmask: bool, optional (default True)
+            If True, smooth the extracted cube over bad lenslets and replace
+            masked spectral values with inverse-variance-weighted neighbors
+            (cosmetic; masked pixels have zero weight anyway).
+    ivar:   bool, optional (default True)
+            If True, propagate an inverse-variance (weight) map through the fit
+            and return it alongside the flux cube. If False, all pixels are
+            weighted equally.
+            #TODO, consider renaming to "use_inverse_variance" throughout repo.
+    dy:     int, optional (default 3)
+            Half-width (in pixels) of the rectangular cutout extracted around
+            each PSFlet in the polychrome image. The full cutout is (2*dy+1) × (2*dy+1) pixels,
+            centered on the lenslet's spectrum on the detector.
+            #TODO, another good candidate to be renamed. Perhaps to "cutout_half_size"
+    hires:  bool, optional (default False)
+            If True, also build an upsampled ("hi-res") reconstruction of the
+            detector image using high-resolution PSFlet models (output as
+            ``name_hires_model.fits``).
+    upsample: int, optional (default 3)
+            Upsampling factor for the hi-res reconstruction. Ignored if
+            ``hires=False``.
+    fitbkgnd: bool, optional (default False)
+            If True, fit a uniform ("DC") background offset under each
+            microspectrum. The offsets are saved separately
+            (``name_offsets.fits``) and also appended as the final extension
+            of the primary cube file.
+    specialPolychrome: array-like or None, optional (default None)
+            If provided, use this custom polychrome PSFlet basis (shape
+            ``n_wavelengths × n_pix × n_pix``) instead of loading from disk.
+            Useful for simulations or custom bases.
+    returnall: bool, optional (default False)
+            If True, return a 3-tuple ``(cube, model, resid)`` where ``model``
+            is the reconstructed detector image and ``resid`` is the data minus
+            the model. If False, return only ``cube``.
+    mode:   string, optional (default 'lstsq')
+            Which fitting method to use:
+              - ``'lstsq'``: single-pass weighted least squares with reconvolution.
+              - ``'lstsq_conv'``: preferred; iterative least squares that refines
+                the noise model each pass.
+              - ``'RL'``, ``'RL_conv'``: legacy Richardson-Lucy deconvolution modes.
+    niter:  int, optional (default 10)
+            Number of iterations for iterative fitting modes (``'lstsq_conv'``,
+            ``'RL_conv'``).
+    pixnoise: float, optional (default 0.0)
+            Constant per-pixel noise term (variance floor) added to the modeled
+            photon variance. Useful for Poisson noise or read noise that exceeds
+            the model.
+    normpsflets: bool, optional (default False)
+            If True, normalize each PSFlet in the basis to unit sum before
+            fitting. Not generally recommended.
+    gain:   float, optional (default 1.0)
+            Detector gain (ADU/photoelectron). Applied to convert raw detector
+            units to photoelectrons before fitting. Output is also converted
+            back to detector units.
 
     Returns
     -------
-    cube :  3D array
-            Return the reduced cube from the original IFS image
-            
-    #TODO, this script needs some cleanup to improve readability. In particular, better variable names and comments. 
-
+    cube :  Image instance
+            The reduced cube from the original IFS image. ``cube.data`` holds
+            the extracted flux (wavelength, y, x) and ``cube.ivar`` holds the
+            matching inverse-variance (weight) cube. If ``returnall`` is True,
+            returns ``(cube, model, resid)`` where ``model`` is the detector
+            image reconstructed from the fit and ``resid`` is the data minus the
+            model.
     '''
+    # ------------------------------------------------------------------
+    # 1. Load the fitting basis: the "polychrome" cube of PSFlet images
+    #    (one detector-plane image per wavelength bin) plus the companion
+    #    "key" giving each lenslet's centroid position and validity flag.
+    # ------------------------------------------------------------------
     if specialPolychrome is None:
         try:
             polychromeR = fits.open(os.path.join(par.wavecalDir, 'polychromeR%d.fits.gz' % (par.R)))
@@ -226,12 +305,22 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         psflets = specialPolychrome.copy()
 
     polychromekey = fits.open(os.path.join(par.wavecalDir, 'polychromekeyR%d.fits' % (par.R)))
-    xindx = polychromekey[1].data
-    yindx = polychromekey[2].data
+    xindx = polychromekey[1].data                    # x centroid of each lenslet, per wavelength
+    yindx = polychromekey[2].data                    # y centroid of each lenslet, per wavelength
+    # TODO: rename 'good' repo-wide - it is a per-lenslet on-detector validity
+    # mask (True where the lenslet's spectrum falls on the detector). While the variable name is 
+    # ambiguous, doing the repo-wide change is left for a later date. 
     good = polychromekey[3].data
 
+    # Central/edge wavelengths of each output bin; one more edge than there are bins.
     lam_midpts, lam_endpts = calculateWaveList(par, method='lstsq', num_wavelengths=psflets.shape[0] + 1)
 
+    # ------------------------------------------------------------------
+    # 2. Optionally append a flat "background" component to the basis so the
+    #    fit can absorb a uniform offset under each microspectrum. This adds
+    #    one extra basis frame (a box of ones) and a matching padding row to
+    #    each per-lenslet array.
+    # ------------------------------------------------------------------
     if fitbkgnd:
         n_add = 1
         psflets = _add_row(psflets, n=n_add, dtype=np.float64)
@@ -250,24 +339,39 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
          'Fit a uniform background to each microspectrum?'),
         end=True)
 
+    # ------------------------------------------------------------------
+    # 3. Prepare the inverse-variance weighting and allocate outputs.
+    #    If ivar weighting is requested but the image has none, assume a
+    #    uniform weight of 1. Otherwise disable weighting entirely.
+    # ------------------------------------------------------------------
     if ivar:
         if ifsimage.ivar is None:
             ifsimage.ivar = np.ones(ifsimage.data.shape)
     else:
         ifsimage.ivar = None
 
-    cube = np.zeros((psflets.shape[0], par.nlens, par.nlens))
-    ivarcube = np.zeros((psflets.shape[0], par.nlens, par.nlens))
-    chisq = np.zeros((par.nlens, par.nlens))
+    cube = np.zeros((psflets.shape[0], par.nlens, par.nlens))       # extracted flux (lam, y, x)
+    ivarcube = np.zeros((psflets.shape[0], par.nlens, par.nlens))   # matching inverse variance
+    chisq = np.zeros((par.nlens, par.nlens))                        # per-lenslet goodness of fit
 
+    # Apply detector gain (ADU -> photoelectrons) up front. 'model' accumulates
+    # the reconstructed detector image; 'resid' starts as the data and has each
+    # lenslet's best fit subtracted off below.
     model = np.zeros(ifsimage.data.shape)
     resid = ifsimage.data.copy() * gain
     ifsimage.data *= gain
 
     ydim, xdim = ifsimage.data.shape
+    # ------------------------------------------------------------------
+    # 4. Fit every lenslet independently. For each lenslet whose spectrum is
+    #    fully on the detector, cut out its microspectrum and the matching
+    #    slice of the PSFlet basis, then least-squares fit for the spectrum.
+    #    Lenslets that fall off the detector (or fail to fit) are flagged NaN
+    #    with zero weight.
+    # ------------------------------------------------------------------
     for i in range(par.nlens):
         for j in range(par.nlens):
-            if np.prod(good[:, i, j], axis=0):
+            if np.all(good[:, i, j],):  # Do all PSFlets for this lenslet fall on the valid region of the detector?
                 subim, psflet_subarr, [y0, y1, x0, x1] = get_cutout(
                     ifsimage, xindx[:, i, j], yindx[:, i, j], psflets, dy, normpsflets=normpsflets)
                 try:
@@ -285,20 +389,32 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                 cube[:, j, i] = np.NaN
                 ivarcube[:, j, i] = 0.
                 chisq[j, i] = np.NaN
+    # ------------------------------------------------------------------
+    # 5. Reconstruct the detector image one wavelength at a time and remove
+    #    each lenslet's best fit from the residual. _tag_psflets maps every
+    #    detector pixel to its nearest lenslet so that overlapping (crosstalk)
+    #    contributions are attributed correctly.
+    # ------------------------------------------------------------------
     for k in range(len(psflets)):
         ydim, xdim = ifsimage.data.shape
-        _x = xindx[k]
-        _y = yindx[k]
-        good = (_x > dy) * (_x < xdim - dy) * (_y > dy) * (_y < ydim - dy)
+        x_center = xindx[k]                          # lenslet x centroids at wavelength k
+        y_center = yindx[k]                          # lenslet y centroids at wavelength k
+        good = (x_center > dy) * (x_center < xdim - dy) * (y_center > dy) * (y_center < ydim - dy)
         psflet_indx = _tag_psflets(
-            ifsimage.data.shape, _x, _y, good, dx=10, dy=10)
+            ifsimage.data.shape, x_center, y_center, good, dx=10, dy=10)
         coefs_flat = np.reshape(cube[k].transpose(), -1)
         resid -= psflets[k] * coefs_flat[psflet_indx]
         model += psflets[k] * coefs_flat[psflet_indx]
 
+    # Undo the gain scaling so model and residual are back in the input units.
     model /= gain
     resid /= gain
 
+    # ------------------------------------------------------------------
+    # 6. Optionally build an upsampled ("hi-res") reconstruction of the
+    #    detector image using the high-resolution PSFlet models. Same logic
+    #    as section 5 but on the finer grid.
+    # ------------------------------------------------------------------
     if hires:
         hires_polychromeR = fits.open(
             os.path.join(par.wavecalDir,
@@ -307,15 +423,20 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         hires_model = np.zeros(hires_polychromeR[0].shape)
         for i in range(len(psflets)):
             ydim, xdim = ifsimage.data.shape
-            _x = xindx[i]
-            _y = yindx[i]
-            good = (_x > dy) * (_x < xdim - dy) * (_y > dy) * (_y < ydim - dy)
+            x_center = xindx[i]
+            y_center = yindx[i]
+            good = (x_center > dy) * (x_center < xdim - dy) * (y_center > dy) * (y_center < ydim - dy)
             psflet_indx = _tag_hires_psflets(
-                hires_model.shape, _x, _y, good, dx=10, dy=10, upsample=upsample)
+                hires_model.shape, x_center, y_center, good, dx=10, dy=10, upsample=upsample)
             coefs_flat = np.reshape(cube[i].transpose(), -1)
             hires_model += hires_polychromeR[i] * \
                 coefs_flat[psflet_indx] / upsample**2
 
+    # ------------------------------------------------------------------
+    # 7. Populate the output FITS header with the extraction metadata and a
+    #    world-coordinate system (spatial RA/Dec tangent plane + logarithmic
+    #    wavelength axis) so the cube can be interpreted downstream.
+    # ------------------------------------------------------------------
     if 'cubemode' not in par.hdr:
         par.hdr.append(('cubemode', 'Least squares', 'Method used to extract data cube'), end=True)
         par.hdr.append(('lam_min', np.amin(lam_midpts), 'Minimum (central) wavelength of extracted cube'), end=True)
@@ -343,8 +464,14 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
             lam_midpts[1] / lam_midpts[0]) * lam_midpts[len(lam_midpts) // 2]
         par.hdr['CRPIX3'] = 1
 
+    # ------------------------------------------------------------------
+    # 8. Post-process the cube: split off the fitted background, apply the
+    #    lenslet flatfield and mask (weights transform inversely to the flux),
+    #    then optionally smooth over/mask bad lenslets.
+    # ------------------------------------------------------------------
     if fitbkgnd:
-        # save the offset into an extension
+        # The extra background component sits in the last wavelength plane;
+        # peel it off into its own array and drop it from the cube.
         dc_offset = cube[-1]
         cube = cube[:-1]
         ivarcube = ivarcube[:-1]
@@ -354,6 +481,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         lenslet_flat = lenslet_flat[np.newaxis, :]
         if "FLAT" not in par.hdr:
             par.hdr.append(('FLAT', True, 'Applied lenslet flatfield'), end=True)
+        # Flux scales with the flat; inverse variance scales with 1 / flat^2.
         cube *= lenslet_flat
         ivarcube /= lenslet_flat**2 + 1e-20
     else:
@@ -378,6 +506,11 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     else:
         cube = Image(data=cube, ivar=ivarcube)
 
+    # ------------------------------------------------------------------
+    # 9. Write the products to disk: the primary cube file (flux + inverse
+    #    variance extensions), plus separate residual, model, chi-squared,
+    #    and (optionally) background-offset / hi-res-model images.
+    # ------------------------------------------------------------------
     # Image(data=cube.data,ivar=ivarcube,header=par.hdr,extraheader=ifsimage.extraheader).write(name+'.fits',overwrite=True)
     out = fits.HDUList(fits.PrimaryHDU(None, par.hdr))
     out.append(fits.PrimaryHDU(cube.data, par.hdr))
@@ -526,35 +659,68 @@ def RL(img, psflets, niter=10, guess=None, eps=1e-10, prior=0.0):
 
 def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=False):
     """
-    Fit a series of PSFlets to an image, recover the best-fit coefficients.
-    This is currently little more than a wrapper for np.linalg.lstsq, but
-    could be more complex if/when we regularize the problem or adopt some
-    other approach.
+    Fit the PSFlet basis to one lenslet's microspectrum and recover the
+    best-fit per-wavelength coefficients (i.e. the extracted spectrum).
+
+    The model is linear: the cutout is treated as a weighted sum of the
+    monochromatic PSFlet images, one per wavelength bin. Stacking the PSFlets
+    as the columns of a design matrix ``A``, the weighted least-squares
+    solution ``f`` minimizes the noise-weighted residual between ``A f`` and
+    the data.
+
+    That raw solution has correlated errors between neighboring wavelength
+    bins. To fix this we build an "R matrix" (called the *line spread
+    function* or *resolution matrix* in the literature) as a row-normalized
+    matrix square root of the inverse covariance, and apply it to the raw
+    solution. This "reconvolution" step yields a spectrum whose per-bin errors
+    are uncorrelated -- it is the Bolton & Schlegel (2010) spectroperfectionism
+    technique, inherited here from T. Brandt's CHARIS pipeline.
 
     Parameters
     ----------
-    subim:   2D nadarray
-        Microspectrum to fit
+    subim:   2D ndarray
+        Microspectrum cutout to fit.
     psflets: 3D ndarray
-        First dimension is wavelength.  psflets[0]
-                must match the shape of subim.
+        The PSFlet basis. First dimension is wavelength; each ``psflets[k]``
+        must match the shape of ``subim``.
     mode:    string
-        Method to use.  Currently limited to lstsq (a
-                simple least-squares fit using linalg.lstsq), this can
-                be expanded to include an arbitrary approach.
+        Which estimator to use:
+          - ``'lstsq'``: single-pass weighted least squares + reconvolution.
+          - ``'lstsq_conv'``: iterative reconvolution (the preferred method);
+            re-estimates the pixel noise from the current model each iteration.
+          - ``'RL'`` / ``'RL_conv'``: legacy Richardson-Lucy deconvolution.
+    niter:   int
+        Number of iterations for the iterative modes.
+    pixnoise: float
+        Constant per-pixel noise term (variance floor) added to the modeled
+        photon variance.
+    fitbkgnd: bool
+        If True, the last PSFlet is a uniform background component; it is
+        excluded from the covariance/reconvolution step (see comment below)
+        and re-inserted into the R matrix afterward.
 
     Returns
     -------
     coef:    array
-        The best-fit coefficients (i.e. the microspectrum).
-
-    Notes
-    -----
-    This routine may also return the covariance matrix in the future.
-    It will depend on the performance of the algorithms and whether/how we
-    implement regularization.
+        The best-fit coefficients, i.e. the extracted microspectrum (one value
+        per wavelength bin).
+    icov:    array
+        The per-wavelength *inverse variance* of ``coef`` -- the diagonal of the
+        inverse covariance of the reconvolved spectrum. This is the weight map
+        that becomes ``ivarcube`` in ``lstsqExtract``. (Named "icov" for inverse
+        covariance; for the diagonal-covariance reconvolved spectrum it is
+        equivalently the inverse variance.)
+    model:   2D ndarray
+        The cutout reconstructed from ``coef`` (``sum_k psflets[k]*coef[k]``).
+    chi2:    float
+        Reduced chi-squared of the fit.
     """
 
+    # ------------------------------------------------------------------
+    # 1. Validate shapes and flatten the inputs. 'A' is the design matrix:
+    #    its columns are the flattened PSFlet images, so A @ coef reproduces
+    #    the (flattened) cutout. N is the number of wavelength bins/PSFlets.
+    # ------------------------------------------------------------------
     try:
         if not subim.shape == psflets[0].shape:
             raise ValueError("subim must be the same shape as each psflet.")
@@ -564,18 +730,25 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=Fal
     subim_flat = np.reshape(subim, -1)
     N = psflets.shape[0]
 
-    # calculate the R matrix (line spread function)
-    # we could have this as a library!
-    # This bit of code deals with some issues that occurred when trying to fit
-    # a uniform background underneath each pixel. Somehow the covariance is messed up
-    # and the reconvolution is not clean. So while we try to figure out a solution,
-    # this code just removes the uniform background from the matrix diagonalization step
+    # ------------------------------------------------------------------
+    # 2. Build the R matrix (the line spread / resolution matrix) from the
+    #    basis. R is a row-normalized matrix square root of the inverse
+    #    covariance; applying it to the raw least-squares solution decorrelates
+    #    the per-wavelength errors (the reconvolution step).
+    #    we could have this as a library!
+    #
+    #    This bit of code deals with some issues that occurred when trying to
+    #    fit a uniform background underneath each pixel. Somehow the covariance
+    #    is messed up and the reconvolution is not clean. So while we try to
+    #    figure out a solution, this code just removes the uniform background
+    #    from the matrix diagonalization step, then re-inserts it into R.
+    # ------------------------------------------------------------------
     if fitbkgnd:
         psflets_flat = np.reshape(psflets[:-1, :, :], (N - 1, -1))
         A = psflets_flat.T
-        Cinv = np.dot(A.T, A)
-        C = np.linalg.inv(Cinv)
-        Q = sp.linalg.sqrtm(Cinv)
+        inverse_covariance = np.dot(A.T, A)
+        covariance = np.linalg.inv(inverse_covariance)
+        Q = sp.linalg.sqrtm(inverse_covariance)
         s = np.sum(Q, axis=1)
         tR = Q / s[np.newaxis, :]
         R = np.zeros((tR.shape[0] + 1, tR.shape[1] + 1))
@@ -589,50 +762,62 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=Fal
     else:
         psflets_flat = np.reshape(psflets, (N, -1))
         A = psflets_flat.T
-        Cinv = np.dot(A.T, A)
-        C = np.linalg.inv(Cinv)
-        Q = sp.linalg.sqrtm(Cinv)
+        inverse_covariance = np.dot(A.T, A)
+        covariance = np.linalg.inv(inverse_covariance)
+        Q = sp.linalg.sqrtm(inverse_covariance)
         s = np.sum(Q, axis=1)
         R = Q / s[np.newaxis, :]
 
-    # Regular weighted least squares
+    # ------------------------------------------------------------------
+    # 3. mode 'lstsq': single-pass weighted least squares + reconvolution.
+    #    Weight each pixel by its modeled inverse variance (Ninv), solve the
+    #    normal equations for the raw solution f, then reconvolve with R.
+    # ------------------------------------------------------------------
     if mode == 'lstsq':
         guess = np.ones(N) * np.sum(subim_flat) / float(N)
-        var = np.reshape(
+        model_variance = np.reshape(
             np.sum(psflets * guess[:, np.newaxis, np.newaxis], axis=0) + pixnoise, -1)
-        Ninv = np.diag(1. / (var + 1e-10))
-        Cinv = np.dot(A.T, np.dot(Ninv, A))
-        C = np.linalg.inv(Cinv)
-        right = np.dot(A.T, np.dot(Ninv, subim_flat))
-        f = np.dot(C, right)
+        Ninv = np.diag(1. / (model_variance + 1e-10))
+        inverse_covariance = np.dot(A.T, np.dot(Ninv, A))
+        covariance = np.linalg.inv(inverse_covariance)
+        right_hand_side = np.dot(A.T, np.dot(Ninv, subim_flat))
+        f = np.dot(covariance, right_hand_side)
         coef = np.dot(R, f)
-        icov = 1. / np.diag(np.dot(R, np.dot(C, R.T)))
+        icov = 1. / np.diag(np.dot(R, np.dot(covariance, R.T)))
         model = np.sum(psflets * coef[:, np.newaxis, np.newaxis], axis=0)
         chi2 = np.sum((subim - model)**2 / (model + pixnoise)) / len(subim_flat)
 
-    # Iterative least squares with reconvolution, which is the preferred method
+    # ------------------------------------------------------------------
+    # 4. mode 'lstsq_conv' (preferred): iterate the weighted fit, refining the
+    #    per-pixel noise estimate from the latest model each pass. The inverse
+    #    variance of the reconvolved spectrum is s**2 (lstsq_inverse_variance).
+    # ------------------------------------------------------------------
     elif mode == 'lstsq_conv':
         guess = np.ones(N) * np.sum(subim_flat) / float(N)
 
         for i in range(niter):
-            var = np.reshape(
+            model_variance = np.reshape(
                 np.sum(psflets * guess[:, np.newaxis, np.newaxis], axis=0) + pixnoise, -1)
-            Ninv = np.diag(1. / (var + 1e-10))
-            Cinv = np.dot(A.T, np.dot(Ninv, A))
-            C = np.linalg.inv(Cinv)
-            Q = sp.linalg.sqrtm(Cinv)
+            Ninv = np.diag(1. / (model_variance + 1e-10))
+            inverse_covariance = np.dot(A.T, np.dot(Ninv, A))
+            covariance = np.linalg.inv(inverse_covariance)
+            Q = sp.linalg.sqrtm(inverse_covariance)
             s = np.sum(Q, axis=0)
-            ivarlstsq = s**2  # inverse variance
+            lstsq_inverse_variance = s**2  # inverse variance
             R = Q / s[:, np.newaxis]
-            right = np.dot(A.T, np.dot(Ninv, subim_flat))
-            f = np.dot(C, right)
+            right_hand_side = np.dot(A.T, np.dot(Ninv, subim_flat))
+            f = np.dot(covariance, right_hand_side)
             guess = np.dot(R, f)
         coef = guess
-        icov = ivarlstsq
+        icov = lstsq_inverse_variance
         model = np.sum(psflets * coef[:, np.newaxis, np.newaxis], axis=0)
         chi2 = np.sum((subim - model)**2 / (model + pixnoise)) / np.prod(subim.shape)
 
-    # Kept here for heritage, this was Maxime playing with the Richardson-Lucy deconvolution
+    # ------------------------------------------------------------------
+    # 5. Legacy Richardson-Lucy deconvolution modes, kept for heritage
+    #    (this was Maxime playing with the RL algorithm). 'RL_conv' follows the
+    #    RL step with the same reconvolution as the lstsq modes.
+    # ------------------------------------------------------------------
     elif mode == 'RL':
         coef = RL(subim, psflets=psflets, niter=niter, prior=pixnoise)[0]
         icov = 1.
@@ -640,18 +825,18 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=Fal
         chi2 = np.sum((subim - model)**2 / model) / np.prod(subim.shape)
     elif mode == 'RL_conv':
         rl = RL(subim, psflets=psflets, niter=niter, prior=pixnoise)[0]
-        var = np.reshape(
+        model_variance = np.reshape(
             np.sum(psflets * rl[:, np.newaxis, np.newaxis], axis=0) + pixnoise, -1)
-        Ninv = np.diag(1. / (var + 1e-10))
-        Cinv = np.dot(A.T, np.dot(Ninv, A))
-        C = np.linalg.inv(Cinv)
-        Q = sp.linalg.sqrtm(Cinv)
+        Ninv = np.diag(1. / (model_variance + 1e-10))
+        inverse_covariance = np.dot(A.T, np.dot(Ninv, A))
+        covariance = np.linalg.inv(inverse_covariance)
+        Q = sp.linalg.sqrtm(inverse_covariance)
         s = np.sum(Q, axis=0)
         R = Q / s[:, np.newaxis]
         # Ctilde = np.diag(1./(s**2+1e-10)
         coef = np.dot(R, rl)
-        ivarlstsq = s**2
-        icov = ivarlstsq
+        lstsq_inverse_variance = s**2
+        icov = lstsq_inverse_variance
         model = np.sum(psflets * coef[:, np.newaxis, np.newaxis], axis=0)
         chi2 = np.sum((subim - model)**2 / model) / np.prod(subim.shape)
     else:
