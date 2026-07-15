@@ -12,6 +12,7 @@ from astropy.io import fits as pyf
 import time
 import os
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
 from crispy.tools.image import Image
 from crispy.tools.lenslet import processImagePlane, propagateLenslets
 from crispy.tools.spectrograph import createAllWeightsArray, selectKernel, loadKernels
@@ -607,4 +608,43 @@ def quickMonochromatic(par=None,
     detectorFrame = detectorFrame[gsize:-gsize, gsize:-gsize]
     if returnCoords:
         return detectorFrame, (Xc, Yc)
-    return detectorFrame
+
+
+def visualize_IFS_cube(cube_data, lam_midpts):
+    """Interactive slider viewer for a reduced IFS spectral cube.
+
+    Parameters
+    ----------
+    cube_data : ndarray, shape (n_wav, ny, nx)
+        3-D spectral cube as returned by reduceIFSMap (cube.data).
+    lam_midpts : array-like
+        Wavelength (nm) corresponding to each slice along axis 0.
+    """
+    n_slices = len(lam_midpts)
+    initial_slice = 0
+
+    fig, ax = plt.subplots(figsize=(8, 7))
+    plt.subplots_adjust(bottom=0.15)
+
+    image_display = ax.imshow(cube_data[initial_slice, :, :], cmap='gist_heat', origin='lower')
+    plt.colorbar(image_display, ax=ax)
+    ax.set_xlabel('Lenslet Index')
+    ax.set_ylabel('Lenslet Index')
+    ax.set_title(f'IFS Cube View\nSlice {initial_slice} / {n_slices - 1}  ({lam_midpts[initial_slice]:.1f} nm)')
+
+    slider_ax = plt.axes([0.2, 0.04, 0.6, 0.03])
+    wavelength_slider = Slider(
+        ax=slider_ax, label='Slice', valmin=0, valmax=n_slices - 1,
+        valinit=initial_slice, valstep=1)
+
+    def _update(val):
+        idx = int(wavelength_slider.val)
+        slice_data = cube_data[idx, :, :]
+        image_display.set_data(slice_data)
+        image_display.set_clim(vmin=np.nanmin(slice_data), vmax=np.nanmax(slice_data))
+        ax.set_title(f'IFS Cube View\nSlice {idx} / {n_slices - 1}  ({lam_midpts[idx]:.1f} nm)')
+        fig.canvas.draw_idle()
+
+    wavelength_slider.on_changed(_update)
+    plt.show(block=False)
+    return fig, ax, wavelength_slider
