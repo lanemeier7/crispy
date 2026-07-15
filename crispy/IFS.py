@@ -40,7 +40,7 @@ def polychromeIFS(par, inWavelist, inputcube,
                   wavecalDir=None,
                   noRot=False,
                   dx=0.0,
-                  upsample=3,  # need to make this part of the header in the templates
+                  upsample=3,  # need to make this part of the header in the templates  <-- What does this comment mean? -Evan
                   npix=13,
                   nlam=10,
                   order=3
@@ -212,11 +212,14 @@ def polychromeIFS(par, inWavelist, inputcube,
                                              order,
                                              dx)
     else:
+        # WARNING: This hand-rolled multiprocessing.Process + Queue pattern is known to
+        # sometimes hang on Windows due to pickling and process-spawn issues.
+        # TODO: Upgrade to concurrent.futures.ThreadPoolExecutor as done in wavecal.py
+        # (makeHires/makePolychrome), which avoids these issues via thread-based parallelism.
         tasks = multiprocessing.Queue()
         results = multiprocessing.Queue()
         ncpus = multiprocessing.cpu_count()
-        consumers = [Consumer(tasks, results)
-                     for i in range(ncpus)]
+        consumers = [Consumer(tasks, results) for i in range(ncpus)]
         for w in consumers:
             w.start()
 
@@ -224,19 +227,7 @@ def polychromeIFS(par, inWavelist, inputcube,
             imagePlaneRot = (wavelist_endpts[i + 1] - wavelist_endpts[i]) * \
                 processImagePlane(par, interpolatedInputCube.data[i], noRot)
             inputCube += [imagePlaneRot]
-            tasks.put(Task(i,
-                           propagateLenslets,
-                           (par,
-                            imagePlaneRot,
-                            wavelist_endpts[i],
-                               wavelist_endpts[i + 1],
-                               high_res_arrays,
-                               lam_arr,
-                               upsample,
-                               nlam,
-                               npix,
-                               order,
-                               dx)))
+            tasks.put(Task(i, propagateLenslets, (par, imagePlaneRot, wavelist_endpts[i], wavelist_endpts[i + 1], high_res_arrays, lam_arr, upsample, nlam, npix, order, dx)))
 
         for i in range(ncpus):
             tasks.put(None)
@@ -416,6 +407,10 @@ def reduceIFSMapList(
         par.hdr.append(('CALDIR', par.wavecalDir.split('/')[-2], 'Directory of wavelength solution'), end=True)
 
     if parallel:
+        # WARNING: This hand-rolled multiprocessing.Process + Queue pattern is known to
+        # sometimes hang on Windows due to pickling and process-spawn issues.
+        # TODO: Upgrade to concurrent.futures.ThreadPoolExecutor as done in wavecal.py
+        # (makeHires/makePolychrome), which avoids these issues via thread-based parallelism.
         tasks = multiprocessing.Queue()
         results = multiprocessing.Queue()
         ncpus = multiprocessing.cpu_count()
