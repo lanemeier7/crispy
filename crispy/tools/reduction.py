@@ -212,27 +212,20 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     -------
     cube :  3D array
             Return the reduced cube from the original IFS image
+            
+    #TODO, this script needs some cleanup to improve readability. In particular, better variable names and comments. 
 
     '''
     if specialPolychrome is None:
         try:
-            polychromeR = fits.open(
-                os.path.join(par.wavecalDir,
-                'polychromeR%d.fits.gz' %
-                (par.R)))
+            polychromeR = fits.open(os.path.join(par.wavecalDir, 'polychromeR%d.fits.gz' % (par.R)))
         except BaseException:
-            polychromeR = fits.open(
-                os.path.join(par.wavecalDir,
-                'polychromeR%d.fits' %
-                (par.R)))
+            polychromeR = fits.open(os.path.join(par.wavecalDir,'polychromeR%d.fits' % (par.R)))
         psflets = polychromeR[0].data
     else:
         psflets = specialPolychrome.copy()
 
-    polychromekey = fits.open(
-        os.path.join(par.wavecalDir,
-        'polychromekeyR%d.fits' %
-        (par.R)))
+    polychromekey = fits.open(os.path.join(par.wavecalDir, 'polychromekeyR%d.fits' % (par.R)))
     xindx = polychromekey[1].data
     yindx = polychromekey[2].data
     good = polychromekey[3].data
@@ -324,73 +317,25 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                 coefs_flat[psflet_indx] / upsample**2
 
     if 'cubemode' not in par.hdr:
-        par.hdr.append(
-            ('cubemode',
-             'Least squares',
-             'Method used to extract data cube'),
-            end=True)
-        par.hdr.append(
-            ('lam_min',
-             np.amin(lam_midpts),
-             'Minimum (central) wavelength of extracted cube'),
-            end=True)
-        par.hdr.append(
-            ('lam_max',
-             np.amax(lam_midpts),
-             'Maximum (central) wavelength of extracted cube'),
-            end=True)
-        par.hdr.append(
-            ('dloglam',
-             np.log(
-                 lam_midpts[1] /
-                 lam_midpts[0]),
-                'Log spacing of extracted wavelength bins'),
-            end=True)
-        par.hdr.append(
-            ('nlam',
-             lam_midpts.shape[0],
-             'Number of extracted wavelengths'),
-            end=True)
-
-        par.hdr.append(
-            ('CTYPE1',
-             'RA---TAN',
-             'first parameter RA  ,  projection TANgential'),
-            end=True)
-        par.hdr.append(
-            ('CTYPE2',
-             'DEC--TAN',
-             'second parameter DEC,  projection TANgential'),
-            end=True)
+        par.hdr.append(('cubemode', 'Least squares', 'Method used to extract data cube'), end=True)
+        par.hdr.append(('lam_min', np.amin(lam_midpts), 'Minimum (central) wavelength of extracted cube'), end=True)
+        par.hdr.append(('lam_max', np.amax(lam_midpts), 'Maximum (central) wavelength of extracted cube'), end=True)
+        par.hdr.append(('dloglam', np.log(lam_midpts[1] / lam_midpts[0]), 'Log spacing of extracted wavelength bins'), end=True)
+        par.hdr.append(('nlam', lam_midpts.shape[0], 'Number of extracted wavelengths'), end=True)
+        par.hdr.append(('CTYPE1', 'RA---TAN', 'first parameter RA  ,  projection TANgential'), end=True)
+        par.hdr.append(('CTYPE2', 'DEC--TAN', 'second parameter DEC,  projection TANgential'), end=True)
         par.hdr.append(('CRVAL1', 0., 'Reference X pixel value'), end=True)
         par.hdr.append(('CRVAL2', 0., 'Reference Y pixel value'), end=True)
         par.hdr.append(('CRPIX1', par.nlens // 2, 'Reference X pixel'), end=True)
         par.hdr.append(('CRPIX2', par.nlens // 2, 'Reference Y pixel'), end=True)
         par.hdr.append(('EQUINOX', 2000, 'Equinox of coordinates'), end=True)
-
         angle = par.philens
         xpixscale = -0.01 / 3600.
         ypixscale = 0.01 / 3600.
-        par.hdr.append(
-            ('CD1_1',
-             np.cos(angle) *
-             xpixscale,
-             'Rotation matrix coefficient'),
-            end=True)
-        par.hdr.append(('CD1_2', -np.sin(angle) * xpixscale,
-                        'Rotation matrix coefficient'), end=True)
-        par.hdr.append(
-            ('CD2_1',
-             np.sin(angle) *
-             ypixscale,
-             'Rotation matrix coefficient'),
-            end=True)
-        par.hdr.append(
-            ('CD2_2',
-             np.cos(angle) *
-             ypixscale,
-             'Rotation matrix coefficient'),
-            end=True)
+        par.hdr.append(('CD1_1', np.cos(angle) * xpixscale, 'Rotation matrix coefficient'),end=True)
+        par.hdr.append(('CD1_2', -np.sin(angle) * xpixscale, 'Rotation matrix coefficient'), end=True)
+        par.hdr.append(('CD2_1', np.sin(angle) * ypixscale, 'Rotation matrix coefficient'),end=True)
+        par.hdr.append(('CD2_2', np.cos(angle) * ypixscale, 'Rotation matrix coefficient'), end=True)
         par.hdr['CTYPE3'] = 'WAVE-LOG'
         par.hdr['CUNIT3'] = 'nm'
         par.hdr['CRVAL3'] = lam_midpts[0]
@@ -408,8 +353,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         lenslet_flat = fits.open(par.lenslet_flat)[1].data
         lenslet_flat = lenslet_flat[np.newaxis, :]
         if "FLAT" not in par.hdr:
-            par.hdr.append(
-                ('FLAT', True, 'Applied lenslet flatfield'), end=True)
+            par.hdr.append(('FLAT', True, 'Applied lenslet flatfield'), end=True)
         cube *= lenslet_flat
         ivarcube /= lenslet_flat**2 + 1e-20
     else:
@@ -424,15 +368,9 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         lenslet_mask = np.ones(cube.shape)
 
     if 'SMOOTHED' not in par.hdr:
-        par.hdr.append(
-            ('SMOOTHED',
-             smoothandmask,
-             'Cube smoothed over bad lenslets'),
-            end=True)
+        par.hdr.append(('SMOOTHED', smoothandmask, 'Cube smoothed over bad lenslets'), end=True)
     else:
-        par.hdr['SMOOTHED'] = (
-            smoothandmask,
-            'Cube smoothed over bad lenslets')
+        par.hdr['SMOOTHED'] = (smoothandmask, 'Cube smoothed over bad lenslets')
 
     if smoothandmask:
         cube = Image(data=cube * lenslet_mask[np.newaxis, :], ivar=ivarcube)
@@ -449,42 +387,17 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         out.append(fits.PrimaryHDU(dc_offset, par.hdr))
     out.writeto(name + '.fits', overwrite=True)
 
-    Image(
-        data=resid,
-        header=par.hdr,
-        extraheader=ifsimage.extraheader).write(
-        name +
-        '_resid.fits',
-        overwrite=True)
-    Image(
-        data=model,
-        header=par.hdr,
-        extraheader=ifsimage.extraheader).write(
-        name +
-        '_model.fits',
-        overwrite=True)
-    Image(
-        data=chisq,
-        header=par.hdr).write(
-        name +
-        '_chisq.fits',
-        overwrite=True)
+    Image(data=resid, header=par.hdr, extraheader=ifsimage.extraheader).write(
+        name + '_resid.fits', overwrite=True)
+    Image(data=model, header=par.hdr, extraheader=ifsimage.extraheader).write(
+        name + '_model.fits', overwrite=True)
+    Image(data=chisq, header=par.hdr).write(name + '_chisq.fits', overwrite=True)
     if fitbkgnd:
-        Image(
-            data=dc_offset,
-            header=par.hdr,
-            extraheader=ifsimage.extraheader).write(
-            name +
-            '_offsets.fits',
-            overwrite=True)
+        Image(data=dc_offset, header=par.hdr, extraheader=ifsimage.extraheader).write(
+            name + '_offsets.fits', overwrite=True)
     if hires:
-        Image(
-            data=hires_model,
-            header=par.hdr,
-            extraheader=ifsimage.extraheader).write(
-            name +
-            '_hires_model.fits',
-            overwrite=True)
+        Image(data=hires_model, header=par.hdr, extraheader=ifsimage.extraheader).write(
+            name + '_hires_model.fits', overwrite=True)
     if returnall:
         return cube, model, resid
     else:
