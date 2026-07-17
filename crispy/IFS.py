@@ -5,6 +5,8 @@ MJ Rizzo and the IFS team
 Originally inspired by T. Brandt's code for CHARIS
 '''
 
+from matplotlib.colors import LogNorm
+
 from crispy.tools.imgtools import gausspsf
 from crispy.tools.locate_psflets import transform
 import numpy as np
@@ -610,7 +612,7 @@ def quickMonochromatic(par=None,
         return detectorFrame, (Xc, Yc)
 
 
-def visualize_IFS_cube(cube_data, lam_midpts):
+def visualize_IFS_cube(cube_data, lam_midpts, scale='linear'):
     """Interactive slider viewer for a reduced IFS spectral cube.
 
     Parameters
@@ -619,14 +621,31 @@ def visualize_IFS_cube(cube_data, lam_midpts):
         3-D spectral cube as returned by reduceIFSMap (cube.data).
     lam_midpts : array-like
         Wavelength (nm) corresponding to each slice along axis 0.
+    scale : string
+        normalization method for the color scale. Options include 'linear' and 'log'.
     """
     n_slices = len(lam_midpts)
     initial_slice = 0
 
     fig, ax = plt.subplots(figsize=(8, 7))
     plt.subplots_adjust(bottom=0.15)
+    
+    # If scale is 'log', apply an offset to each slice of the cube so that its min is > 0.
+    if scale == 'log':
+        cube_data = np.array([cube_data[i] - np.nanmin(cube_data[i]) + 1E-10 for i in range(len(cube_data))])
+    elif scale != 'linear':
+        raise ValueError(f"Unsupported scale: {scale}")
 
-    image_display = ax.imshow(cube_data[initial_slice, :, :], cmap='gist_heat', origin='lower')
+    initial_data = cube_data[initial_slice]
+    vmin = np.nanpercentile(initial_data, 1)
+    vmax = np.nanmax(initial_data)
+
+    if scale == 'log':
+        norm = LogNorm(vmin=vmin, vmax=vmax)
+    else:
+        norm = None
+
+    image_display = ax.imshow(initial_data, cmap='gist_heat', origin='lower', norm=norm)
     plt.colorbar(image_display, ax=ax)
     ax.set_xlabel('Lenslet Index')
     ax.set_ylabel('Lenslet Index')
@@ -639,12 +658,22 @@ def visualize_IFS_cube(cube_data, lam_midpts):
 
     def _update(val):
         idx = int(wavelength_slider.val)
-        slice_data = cube_data[idx, :, :]
+        slice_data = cube_data[idx]
+        vmin = np.nanpercentile(slice_data, 1)
+        vmax = np.nanmax(slice_data)
+
         image_display.set_data(slice_data)
-        image_display.set_clim(vmin=np.nanmin(slice_data), vmax=np.nanmax(slice_data))
+
+        if scale == 'log':
+            norm = LogNorm(vmin=vmin, vmax=vmax)
+            image_display.set_norm(norm)
+        else:
+            image_display.set_clim(vmin=vmin, vmax=vmax)
+
         ax.set_title(f'IFS Cube View\nSlice {idx} / {n_slices - 1}  ({lam_midpts[idx]:.1f} nm)')
         fig.canvas.draw_idle()
 
     wavelength_slider.on_changed(_update)
+    fig._ifs_slider = wavelength_slider  # prevent garbage collection
     plt.show(block=False)
     return fig, ax, wavelength_slider

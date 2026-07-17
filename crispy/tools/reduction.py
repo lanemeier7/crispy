@@ -7,6 +7,7 @@ import scipy as sp
 from scipy import signal
 from scipy.interpolate import interp1d
 from scipy import ndimage
+import matplotlib.pyplot as plt
 from crispy.tools.locate_psflets import PSFLets
 from crispy.tools.image import Image
 from scipy import interpolate
@@ -374,6 +375,16 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
             if np.all(good[:, i, j],):  # Do all PSFlets for this lenslet fall on the valid region of the detector?
                 subim, psflet_subarr, [y0, y1, x0, x1] = get_cutout(
                     ifsimage, xindx[:, i, j], yindx[:, i, j], psflets, dy, normpsflets=normpsflets)
+                # Important definitions:
+                # subim: 2D cutout of the detector image around this lenslet's microspectrum
+                # psflet_subarr: 3D cutout of the PSFlet basis where each slice is that lenslet's PSFlet at a different wavelength
+                
+                # Temporary visualization of the cutout for debugging purposes. Can be commented out if not needed.
+                # plt.close('all')
+                # fig, ax = plt.subplots()
+                # ax.imshow(subim, origin='lower')
+                # plt.show(block=False)
+                
                 try:
                     cube[:, j, i], ivarcube[:, j, i], modelij, chisq[j, i] = fit_cutout(
                         subim.copy(), psflet_subarr.copy(), mode=mode,
@@ -400,8 +411,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         x_center = xindx[k]                          # lenslet x centroids at wavelength k
         y_center = yindx[k]                          # lenslet y centroids at wavelength k
         good = (x_center > dy) * (x_center < xdim - dy) * (y_center > dy) * (y_center < ydim - dy)
-        psflet_indx = _tag_psflets(
-            ifsimage.data.shape, x_center, y_center, good, dx=10, dy=10)
+        psflet_indx = _tag_psflets(ifsimage.data.shape, x_center, y_center, good, dx=10, dy=10)
         coefs_flat = np.reshape(cube[k].transpose(), -1)
         resid -= psflets[k] * coefs_flat[psflet_indx]
         model += psflets[k] * coefs_flat[psflet_indx]
