@@ -49,6 +49,7 @@ class Params(object):
         self.FWHM = 2               # FWHM of gaussian kernel
         self.FWHMlam = 660.         # Lam at which FWHM is defined
         self.gaussian = False       # Use standard Gaussian kernels instead of library
+        self.gaussian_hires = True  # Use Gaussians for hires PSFLet matching, instead of Lucy-Richardson deconvolution
 
         # self.RN = 0.2               # FWHM of gaussian kernel
         # self.CIC = 1e-3             # Lam at which FWHM is defined
@@ -68,7 +69,7 @@ class Params(object):
         self.BW = 0.18              # Spectral bandwidth (if distortPISCES==False)
         self.npixperdlam = 2.0      # Number of pixels per spectral resolution element
         self.nchanperspec_lstsq = 2.0  # num_wavelengths per pixel for least squares
-        self.R = 70                 # Spectral resolving power (extracted cubes have twice)
+        self.R = 70                 # Spectral resolving power
 
         # carry-over old parameter names
         self.lenslet_wav = self.lenslet_wav
