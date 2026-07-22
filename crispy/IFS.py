@@ -14,7 +14,7 @@ from astropy.io import fits as pyf
 import time
 import os
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider
+from matplotlib.widgets import Slider, Button
 from crispy.tools.image import Image
 from crispy.tools.lenslet import processImagePlane, propagateLenslets
 from crispy.tools.spectrograph import createAllWeightsArray, selectKernel, loadKernels
@@ -338,6 +338,7 @@ def reduceIFSMap(
         pixnoise = std**2
 
     if method in ['lstsq', 'lstsq_conv', 'RL', 'RL_conv']:
+        log.info("Using least-squares extraction method")
         reducedName += '_red_' + method
         cube = lstsqExtract(
             par,
@@ -353,11 +354,14 @@ def reduceIFSMap(
             niter=niter,
             pixnoise=pixnoise,
             normpsflets=normpsflets,
-            gain=gain)
+            gain=gain,
+            show_fit_plots=True)
     elif method == 'optext':
+        log.info("Using optimal extraction method")
         reducedName += '_red_optext'
         cube = intOptimalExtract(par, os.path.join(par.exportDir, reducedName), IFSimage, smoothandmask=smoothbad)
     elif method == 'sum':
+        log.info("Using sum extraction method")
         reducedName += '_red_sum'
         cube = intOptimalExtract(par, os.path.join(par.exportDir, reducedName), IFSimage, smoothandmask=smoothbad, sum=True)
 
@@ -622,58 +626,75 @@ def visualize_IFS_cube(cube_data, lam_midpts, scale='linear'):
     lam_midpts : array-like
         Wavelength (nm) corresponding to each slice along axis 0.
     scale : string
-        normalization method for the color scale. Options include 'linear' and 'log'.
+        Initial normalization method for the color scale. Options include 'linear' and 'log'.
     """
+    if scale not in ('linear', 'log'):
+        raise ValueError(f"Unsupported scale: {scale}")
+
     n_slices = len(lam_midpts)
     initial_slice = 0
 
     fig, ax = plt.subplots(figsize=(8, 7))
-    plt.subplots_adjust(bottom=0.15)
-    
-    # If scale is 'log', apply an offset to each slice of the cube so that its min is > 0.
-    if scale == 'log':
-        cube_data = np.array([cube_data[i] - np.nanmin(cube_data[i]) + 1E-10 for i in range(len(cube_data))])
-    elif scale != 'linear':
-        raise ValueError(f"Unsupported scale: {scale}")
+    plt.subplots_adjust(bottom=0.18)
 
-    initial_data = cube_data[initial_slice]
+    # Offset each slice so min > 0, needed whenever log scale is used.
+    cube_log = np.array([cube_data[i] - np.nanmin(cube_data[i]) + 1E-10 for i in range(len(cube_data))])
+
+    state = {'scale': scale}
+
+    def _get_slice_data(idx):
+        return cube_log[idx] if state['scale'] == 'log' else cube_data[idx]
+
+    initial_data = _get_slice_data(initial_slice)
     vmin = np.nanpercentile(initial_data, 1)
     vmax = np.nanmax(initial_data)
-
-    if scale == 'log':
-        norm = LogNorm(vmin=vmin, vmax=vmax)
-    else:
-        norm = None
+    norm = LogNorm(vmin=vmin, vmax=vmax) if scale == 'log' else None
 
     image_display = ax.imshow(initial_data, cmap='gist_heat', origin='lower', norm=norm)
-    plt.colorbar(image_display, ax=ax)
+    colorbar = plt.colorbar(image_display, ax=ax)
     ax.set_xlabel('Lenslet Index')
     ax.set_ylabel('Lenslet Index')
     ax.set_title(f'IFS Cube View\nSlice {initial_slice} / {n_slices - 1}  ({lam_midpts[initial_slice]:.1f} nm)')
 
-    slider_ax = plt.axes([0.2, 0.04, 0.6, 0.03])
+    slider_ax = plt.axes([0.2, 0.07, 0.6, 0.03])
     wavelength_slider = Slider(
         ax=slider_ax, label='Slice', valmin=0, valmax=n_slices - 1,
         valinit=initial_slice, valstep=1)
 
-    def _update(val):
-        idx = int(wavelength_slider.val)
-        slice_data = cube_data[idx]
+    button_ax = plt.axes([0.81, 0.02, 0.12, 0.04])
+    scale_button = Button(button_ax, 'Log' if scale == 'linear' else 'Linear')
+
+    def _apply_scale(idx):
+        slice_data = _get_slice_data(idx)
         vmin = np.nanpercentile(slice_data, 1)
         vmax = np.nanmax(slice_data)
-
         image_display.set_data(slice_data)
-
-        if scale == 'log':
-            norm = LogNorm(vmin=vmin, vmax=vmax)
-            image_display.set_norm(norm)
+        if state['scale'] == 'log':
+            image_display.set_norm(LogNorm(vmin=vmin, vmax=vmax))
         else:
+            image_display.set_norm(None)
             image_display.set_clim(vmin=vmin, vmax=vmax)
-
         ax.set_title(f'IFS Cube View\nSlice {idx} / {n_slices - 1}  ({lam_midpts[idx]:.1f} nm)')
         fig.canvas.draw_idle()
 
+    def _update(val):
+        _apply_scale(int(wavelength_slider.val))
+
+    def _toggle_scale(event):
+        if state['scale'] == 'linear':
+            state['scale'] = 'log'
+            scale_button.label.set_text('Linear')
+        else:
+            state['scale'] = 'linear'
+            scale_button.label.set_text('Log')
+        _apply_scale(int(wavelength_slider.val))
+
     wavelength_slider.on_changed(_update)
-    fig._ifs_slider = wavelength_slider  # prevent garbage collection
+    scale_button.on_clicked(_toggle_scale)
+
+    # Prevent garbage collection
+    fig._ifs_slider = wavelength_slider
+    fig._ifs_button = scale_button
+
     plt.show(block=False)
     return fig, ax, wavelength_slider

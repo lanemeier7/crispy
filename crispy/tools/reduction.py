@@ -195,7 +195,7 @@ def calculateWaveList(par, lam_list=None, num_wavelengths=None, method='lstsq'):
 def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                  hires=False, upsample=3, fitbkgnd=False,
                  specialPolychrome=None, returnall=False, mode='lstsq',
-                 niter=10, pixnoise=0.0, normpsflets=False, gain=1.0):
+                 niter=10, pixnoise=0.0, normpsflets=False, gain=1.0, show_fit_plots=False):
     '''
     Least-squares extraction of an IFS data cube from a raw detector image.
 
@@ -280,6 +280,8 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
             Detector gain (ADU/photoelectron). Applied to convert raw detector
             units to photoelectrons before fitting. Output is also converted
             back to detector units.
+    show_fit_plots: bool, optional (default False)
+            If True, display a plot of the microspectrum and the largest PSFlet components for each lenslet during the fit.
 
     Returns
     -------
@@ -371,6 +373,8 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     #    with zero weight.
     # ------------------------------------------------------------------
     for i in range(par.nlens):
+        if i % 10 == 0:
+            log.info('  Processing lenslet row {:}'.format(i))
         for j in range(par.nlens):
             if np.all(good[:, i, j],):  # Do all PSFlets for this lenslet fall on the valid region of the detector?
                 subim, psflet_subarr, [y0, y1, x0, x1] = get_cutout(
@@ -396,16 +400,58 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                     cube[:, j, i] = np.NaN
                     ivarcube[:, j, i] = 0.
                     chisq[j, i] = np.NaN
+                    
+                # Create a multi-figure plot showing the subimage, and the slices of the psflet array that were used to create the model.
+                # This is useful for visually inspecting the fit quality and the contribution of each PSFlet.
+                # Use the psflet slices with the N largest coefficients to visualize their contribution.
+                if show_fit_plots:
+                    if i == cube.shape[1] // 2:
+                        num_coefficients = 5
+                        fig, ax = plt.subplots(num_coefficients + 2, 1, figsize=(8,10), 
+                                            gridspec_kw={'hspace': 0.01, 'left': 0.3, 'right': 0.98, 'top':0.95, 'bottom':0.05})
+                        fig.suptitle(f'Lenslet ({i}, {j})')
+                        # Calculate vmin and vmax from subim for consistent scaling
+                        vmin = np.nanmin(subim)
+                        vmax = np.nanmax(subim)
+                        ax[0].imshow(subim, origin='lower', vmin=vmin, vmax=vmax)
+                        ax[0].set_xticks([])
+                        ax[0].text(-0.1, 0.5, f'Microspectrum\n(observed)', transform=ax[0].transAxes, va='center', ha='right', fontsize=10)
+                        ax[1].imshow(modelij, origin='lower', vmin=vmin, vmax=vmax)
+                        ax[1].set_xticks([])
+                        ax[1].text(-0.1, 0.5, f'Microspectrum\n(modeled)\nChi-sq: {chisq[j, i]:.1f}', transform=ax[1].transAxes, va='center', ha='right', fontsize=10)
+                        largest_indices = np.flip(np.argsort(cube[:,j,i])[-num_coefficients:])
+                        for idx_pos, idx in enumerate(largest_indices):
+                            ax[idx_pos + 2].imshow(cube[idx, j, i] * psflet_subarr[idx], origin='lower', vmin=vmin, vmax=vmax)
+                            coef_value = round(cube[idx, j, i], 1)
+                            ax[idx_pos + 2].set_xticks([])
+                            ax[idx_pos + 2].text(-0.1, 0.5, f'{lam_endpts[idx-1]:.1f} - {lam_endpts[idx]:.1f} nm\namplitude: {coef_value}', transform=ax[idx_pos + 2].transAxes, va='center', ha='right', fontsize=10)
+                            
+                        fig.tight_layout()
+                        plt.show(block=False)
+                        # input('Press Enter to continue...')  # Add pause for input
+                        plt.close('all')
+                    
             else:
                 cube[:, j, i] = np.NaN
                 ivarcube[:, j, i] = 0.
                 chisq[j, i] = np.NaN
+    
+    # Show map of chisq values
+    if show_fit_plots:
+        fig, ax = plt.subplots()
+        im = ax.imshow(chisq, origin='lower',vmin=np.nanpercentile(chisq, 1), vmax=np.nanpercentile(chisq, 99))
+        fig.colorbar(im, ax=ax)
+        ax.set_xlabel('Lenslet X Index')
+        ax.set_ylabel('Lenslet Y Index')
+        ax.set_title('Chi-squared Map')
+        plt.show(block=True)
     # ------------------------------------------------------------------
     # 5. Reconstruct the detector image one wavelength at a time and remove
     #    each lenslet's best fit from the residual. _tag_psflets maps every
     #    detector pixel to its nearest lenslet so that overlapping (crosstalk)
     #    contributions are attributed correctly.
     # ------------------------------------------------------------------
+    log.info('Reconstructing the detector image from the extracted cube')
     for k in range(len(psflets)):
         ydim, xdim = ifsimage.data.shape
         x_center = xindx[k]                          # lenslet x centroids at wavelength k
@@ -426,6 +472,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     #    as section 5 but on the finer grid.
     # ------------------------------------------------------------------
     if hires:
+        log.info('  Building high-resolution reconstruction of the detector image')
         hires_polychromeR = fits.open(
             os.path.join(par.wavecalDir,
             'hiresPolyChromeR%d.fits.gz' %
@@ -470,8 +517,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         par.hdr['CTYPE3'] = 'WAVE-LOG'
         par.hdr['CUNIT3'] = 'nm'
         par.hdr['CRVAL3'] = lam_midpts[0]
-        par.hdr['CDELT3'] = np.log(
-            lam_midpts[1] / lam_midpts[0]) * lam_midpts[len(lam_midpts) // 2]
+        par.hdr['CDELT3'] = np.log(lam_midpts[1] / lam_midpts[0]) * lam_midpts[len(lam_midpts) // 2]
         par.hdr['CRPIX3'] = 1
 
     # ------------------------------------------------------------------
@@ -479,6 +525,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     #    lenslet flatfield and mask (weights transform inversely to the flux),
     #    then optionally smooth over/mask bad lenslets.
     # ------------------------------------------------------------------
+    log.info('  Post-processing the extracted cube')
     if fitbkgnd:
         # The extra background component sits in the last wavelength plane;
         # peel it off into its own array and drop it from the cube.
@@ -511,16 +558,19 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         par.hdr['SMOOTHED'] = (smoothandmask, 'Cube smoothed over bad lenslets')
 
     if smoothandmask:
-        cube = Image(data=cube * lenslet_mask[np.newaxis, :], ivar=ivarcube)
+        # cube = Image(data=cube * lenslet_mask[np.newaxis, :], ivar=ivarcube)
+        cube = Image(data=cube * lenslet_mask, ivar=ivarcube)
         cube = _smoothandmask(cube, np.ones(good.shape))
     else:
         cube = Image(data=cube, ivar=ivarcube)
+
 
     # ------------------------------------------------------------------
     # 9. Write the products to disk: the primary cube file (flux + inverse
     #    variance extensions), plus separate residual, model, chi-squared,
     #    and (optionally) background-offset / hi-res-model images.
     # ------------------------------------------------------------------
+    log.info('  Writing the extracted cube and associated products to disk')
     # Image(data=cube.data,ivar=ivarcube,header=par.hdr,extraheader=ifsimage.extraheader).write(name+'.fits',overwrite=True)
     out = fits.HDUList(fits.PrimaryHDU(None, par.hdr))
     out.append(fits.PrimaryHDU(cube.data, par.hdr))
@@ -757,7 +807,10 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=Fal
         psflets_flat = np.reshape(psflets[:-1, :, :], (N - 1, -1))
         A = psflets_flat.T
         inverse_covariance = np.dot(A.T, A)
-        covariance = np.linalg.inv(inverse_covariance)
+        try:
+            covariance = np.linalg.inv(inverse_covariance)
+        except np.linalg.LinAlgError:
+            raise ValueError("Inverse covariance matrix could not be computed.")
         Q = sp.linalg.sqrtm(inverse_covariance)
         s = np.sum(Q, axis=1)
         tR = Q / s[np.newaxis, :]
