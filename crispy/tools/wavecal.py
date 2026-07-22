@@ -1439,8 +1439,6 @@ def buildcalibrations(
     else:
         finexy = None
 
-
-#     if genwavelengthsol:
     log.info("Computing wavelength values at pixel centers")
     psftool = PSFLets()
     psftool.genpixsol(
@@ -1453,9 +1451,6 @@ def buildcalibrations(
         borderpix=borderpix,
         finexy=finexy)
     psftool.savepixsol(outdir=outdir)
-#     else:
-#         log.info("Loading previous wavelength calibration (PSFloc.fits)")
-#         psftool = PSFLets(load=True,infiledir=outdir)
 
     xindx = np.arange(-par.nlens // 2, par.nlens // 2) + 1
     xindx, yindx = np.meshgrid(xindx, xindx)
