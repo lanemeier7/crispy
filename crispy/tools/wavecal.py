@@ -1128,6 +1128,8 @@ def buildcalibrations(
             will be determined in each region from the average of all PSFLets within that
             region
     parallel: Boolean
+            NOTE: No longer beneficial after branch made on 7/24/2026, where the make_polychrome() math 
+                was improved such that single-threaded computation is now faster by ~2x. 
             Whether or not to parallelize the computation for the high-resolution PSFLet and
             polychrome computation. The wavelength calibration step cannot be parallelized since
             each wavelength uses the previous wavelength solution as a guess input.

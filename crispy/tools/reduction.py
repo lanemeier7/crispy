@@ -416,7 +416,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                 # Use the psflet slices with the N largest coefficients to visualize their contribution.
                 if show_fit_plots:
                     if i == 40: #cube.shape[1] // 2:
-                        num_coefficients = 5
+                        num_coefficients = 8
                         fig, ax = plt.subplots(num_coefficients + 2, 1, figsize=(8,10), 
                                             gridspec_kw={'hspace': 0.01, 'left': 0.3, 'right': 0.98, 'top':0.95, 'bottom':0.05})
                         fig.suptitle(f'Lenslet ({i}, {j})')
