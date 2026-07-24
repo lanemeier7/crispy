@@ -377,6 +377,12 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
             log.info('  Processing lenslet row {:}'.format(i))
         for j in range(par.nlens):
             if np.all(good[:, i, j],):  # Do all PSFlets for this lenslet fall on the valid region of the detector?
+                
+                # Check to make sure that no part of x/yindx falls outside the range of the sensor
+                if np.any(xindx[:, i, j] < 0) or np.any(xindx[:, i, j] >= xdim) or np.any(yindx[:, i, j] < 0) or np.any(yindx[:, i, j] >= ydim):
+                    log.warning(f'TEMPORARY: Some x/y indices for lenslet ({i}, {j}) fall outside the sensor range')
+                    print('This is probably going to cause the next line to fail')
+                
                 subim, psflet_subarr, [y0, y1, x0, x1] = get_cutout(
                     ifsimage, xindx[:, i, j], yindx[:, i, j], psflets, dy, normpsflets=normpsflets)
                 # Important definitions:
@@ -389,6 +395,10 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                 # ax.imshow(subim, origin='lower')
                 # plt.show(block=False)
                 
+                # Check to make sure that no slices of psflet_subarr are comprised of all zeros
+                if np.any([np.all(slice==0) for slice in psflet_subarr]):
+                                    log.warning(f'TEMPORARY: One or more slices of the PSFlet subarray are all zeros for lenslet ({i}, {j})')
+                                    print('This is probably going to cause the next line to fail')
                 try:
                     cube[:, j, i], ivarcube[:, j, i], modelij, chisq[j, i] = fit_cutout(
                         subim.copy(), psflet_subarr.copy(), mode=mode,
@@ -808,8 +818,8 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=Fal
         A = psflets_flat.T
         inverse_covariance = np.dot(A.T, A)
         try:
-            covariance = np.linalg.inv(inverse_covariance)
-        except np.linalg.LinAlgError:
+            covariance = np.linalg.inv(inverse_covariance)  # Do NOT use np.linalg.pinv() here because if it encounters an uninvertible matrix, it will give a result, but things will break later.
+        except Exception:
             raise ValueError("Inverse covariance matrix could not be computed.")
         Q = sp.linalg.sqrtm(inverse_covariance)
         s = np.sum(Q, axis=1)

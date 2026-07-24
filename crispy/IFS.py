@@ -616,7 +616,7 @@ def quickMonochromatic(par=None,
         return detectorFrame, (Xc, Yc)
 
 
-def visualize_IFS_cube(cube_data, lam_midpts, scale='linear'):
+def visualize_IFS_cube(cube_data, lam_midpts=None, scale='linear'):
     """Interactive slider viewer for a reduced IFS spectral cube.
 
     Parameters
@@ -654,7 +654,11 @@ def visualize_IFS_cube(cube_data, lam_midpts, scale='linear'):
     colorbar = plt.colorbar(image_display, ax=ax)
     ax.set_xlabel('Lenslet Index')
     ax.set_ylabel('Lenslet Index')
-    ax.set_title(f'IFS Cube View\nSlice {initial_slice} / {n_slices - 1}  ({lam_midpts[initial_slice]:.1f} nm)')
+    if lam_midpts is not None:
+        title_text = f'IFS Cube View\nSlice {initial_slice} / {n_slices - 1}  ({lam_midpts[initial_slice]:.1f} nm)'
+    else:
+        title_text = f'IFS Cube View\nSlice {initial_slice} / {n_slices - 1}'
+    ax.set_title(title_text)
 
     slider_ax = plt.axes([0.2, 0.07, 0.6, 0.03])
     wavelength_slider = Slider(
@@ -674,7 +678,10 @@ def visualize_IFS_cube(cube_data, lam_midpts, scale='linear'):
         else:
             image_display.set_norm(None)
             image_display.set_clim(vmin=vmin, vmax=vmax)
-        ax.set_title(f'IFS Cube View\nSlice {idx} / {n_slices - 1}  ({lam_midpts[idx]:.1f} nm)')
+        if lam_midpts is not None:
+            ax.set_title(f'IFS Cube View\nSlice {idx} / {n_slices - 1}  ({lam_midpts[idx]:.1f} nm)')
+        else:
+            ax.set_title(f'IFS Cube View\nSlice {idx} / {n_slices - 1}')
         fig.canvas.draw_idle()
 
     def _update(val):
