@@ -87,9 +87,20 @@ def do_inspection(par, image, xpos, ypos, lam, display_plot=False):
 
 def make_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
                     xindx, yindx, ydim, xdim, finexy=None, reflam=None, upsample=10, nlam=10,
+                    prefiltered=False,
                     ):
     """
-    TODO, make a numpy-style docstring. Include some details about how "the polychrome" image is made. 
+    TODO, make a numpy-style docstring. Include some details about how "the polychrome" image is made.
+
+    prefiltered: bool
+        If True, hires_arrs is assumed to have already been passed through
+        ndimage.spline_filter (once, ahead of time, e.g. in buildcalibrations), so the
+        in-loop spline_filter call below is skipped. Since spline_filter is linear and
+        commutes with the affine interpolation between calibration wavelengths performed
+        below, this is mathematically equivalent to filtering the interpolated array on
+        every sub-wavelength, but avoids redundant repeated filtering of the same
+        calibration arrays across sub-wavelengths and wavelength bins. Default False
+        (preserves original behavior).
     """
 
     padding = 10
@@ -124,9 +135,10 @@ def make_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
             hires += hires_arrs[i2] * \
                 (lam_arr[i2] - lam) / (lam_arr[i2] - lam_arr[i1])
 
-        for i in range(hires.shape[0]):
-            for j in range(hires.shape[1]):
-                hires[i, j] = ndimage.spline_filter(hires[i, j])
+        if not prefiltered:
+            for i in range(hires.shape[0]):
+                for j in range(hires.shape[1]):
+                    hires[i, j] = ndimage.spline_filter(hires[i, j])
 
         ################################################################
         # Run through lenslet centroids at this wavelength using the
@@ -212,14 +224,19 @@ def make_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
             weight21 /= totweight * nlam
             weight22 /= totweight * nlam
 
-            image[iy1:iy2, ix1:ix2] += weight11 * \
-                ndimage.map_coordinates(hires[j1, i1], [yinterp, xinterp], prefilter=False)
-            image[iy1:iy2, ix1:ix2] += weight12 * \
-                ndimage.map_coordinates(hires[j1, i2], [yinterp, xinterp], prefilter=False)
-            image[iy1:iy2, ix1:ix2] += weight21 * \
-                ndimage.map_coordinates(hires[j2, i1], [yinterp, xinterp], prefilter=False)
-            image[iy1:iy2, ix1:ix2] += weight22 * \
-                ndimage.map_coordinates(hires[j2, i2], [yinterp, xinterp], prefilter=False)
+            ##############################################################
+            # map_coordinates(prefilter=False) is linear in its input array,
+            # and all four calls below share identical [yinterp, xinterp]
+            # coordinates, so the weighted sum of four interpolations equals
+            # a single interpolation of the weighted sum of the four hires
+            # regions. Combining first cuts the map_coordinates call count
+            # by 4x (exactly, for nsubarr=1, since the four regions are then
+            # identical).
+            ##############################################################
+            combined = (weight11 * hires[j1, i1] + weight12 * hires[j1, i2] +
+                       weight21 * hires[j2, i1] + weight22 * hires[j2, i2])
+            image[iy1:iy2, ix1:ix2] += ndimage.map_coordinates(
+                combined, [yinterp, xinterp], prefilter=False)
 
     image = image[padding:-padding, padding:-padding]
     return image
@@ -227,8 +244,13 @@ def make_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
 
 def make_hires_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
                           xindx, yindx, ydim, xdim, upsample=10, nlam=10,
-                          finexy=None, reflam=None):
+                          finexy=None, reflam=None, prefiltered=False):
     """
+    prefiltered: bool
+        If True, hires_arrs is assumed to have already been passed through
+        ndimage.spline_filter (once, ahead of time), so the in-loop spline_filter call
+        below is skipped. See make_polychrome's docstring for why this is exact.
+        Default False (preserves original behavior).
     """
 
     padding = 10
@@ -264,9 +286,10 @@ def make_hires_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
             hires += hires_arrs[i2] * \
                 (lam_arr[i2] - lam) / (lam_arr[i2] - lam_arr[i1])
 
-        for i in range(hires.shape[0]):
-            for j in range(hires.shape[1]):
-                hires[i, j] = ndimage.spline_filter(hires[i, j])
+        if not prefiltered:
+            for i in range(hires.shape[0]):
+                for j in range(hires.shape[1]):
+                    hires[i, j] = ndimage.spline_filter(hires[i, j])
 
         ################################################################
         # Run through lenslet centroids at this wavelength using the
@@ -351,30 +374,19 @@ def make_hires_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
             weight21 /= totweight * nlam
             weight22 /= totweight * nlam
 
-            hiresimg[iy1:iy2,
-                     ix1:ix2] += weight11 * ndimage.map_coordinates(hires[j1,
-                                                                          i1],
-                                                                    [yinterp,
-                                                                     xinterp],
-                                                                    prefilter=False)
-            hiresimg[iy1:iy2,
-                     ix1:ix2] += weight12 * ndimage.map_coordinates(hires[j1,
-                                                                          i2],
-                                                                    [yinterp,
-                                                                     xinterp],
-                                                                    prefilter=False)
-            hiresimg[iy1:iy2,
-                     ix1:ix2] += weight21 * ndimage.map_coordinates(hires[j2,
-                                                                          i1],
-                                                                    [yinterp,
-                                                                     xinterp],
-                                                                    prefilter=False)
-            hiresimg[iy1:iy2,
-                     ix1:ix2] += weight22 * ndimage.map_coordinates(hires[j2,
-                                                                          i2],
-                                                                    [yinterp,
-                                                                     xinterp],
-                                                                    prefilter=False)
+            ##############################################################
+            # map_coordinates(prefilter=False) is linear in its input array,
+            # and all four calls below share identical [yinterp, xinterp]
+            # coordinates, so the weighted sum of four interpolations equals
+            # a single interpolation of the weighted sum of the four hires
+            # regions. Combining first cuts the map_coordinates call count
+            # by 4x (exactly, for nsubarr=1, since the four regions are then
+            # identical).
+            ##############################################################
+            combined = (weight11 * hires[j1, i1] + weight12 * hires[j1, i2] +
+                       weight21 * hires[j2, i1] + weight22 * hires[j2, i2])
+            hiresimg[iy1:iy2, ix1:ix2] += ndimage.map_coordinates(
+                combined, [yinterp, xinterp], prefilter=False)
 
     hiresimg = hiresimg[padding * upsample:-padding *
                         upsample, padding * upsample:-padding * upsample]
@@ -1537,6 +1549,20 @@ def buildcalibrations(
         if not makehiresPSFlets:
             hires_arrs = [fits.open(filename)[0].data for filename in hires_list]
 
+        # Pre-filter each calibration PSFlet array once, ahead of the wavelength-bin loop
+        # below, instead of re-filtering the (linearly interpolated) hires array on every
+        # sub-wavelength inside make_polychrome. spline_filter is linear and commutes with
+        # that interpolation, so this produces numerically equivalent results while avoiding
+        # ~nlam x num_wavelengths redundant filter passes over the same calibration data.
+        # A separate list is built (rather than filtering hires_arrs in place) since
+        # hires_arrs may be reused below for makehiresPolychrome.
+        log.info('Prefiltering hires_arrs...')
+        hires_arrs_prefiltered = [h.astype(np.float64).copy() for h in hires_arrs]
+        for h in hires_arrs_prefiltered:
+            for i in range(h.shape[0]):
+                for j in range(h.shape[1]):
+                    h[i, j] = ndimage.spline_filter(h[i, j])
+
         # Create an array of wavelengths that represent the midpoints/endpoints of the wavelength bins
         lam_midpts, lam_endpts = calculateWaveList(par, lam, method='lstsq')
         # TODO, rename all instances of 'num_wavelengths' to 'num_wavelengths' for clarity. 
@@ -1555,7 +1581,7 @@ def buildcalibrations(
                 log.info(f'  Wavelength bin {i + 1} of {num_wavelengths - 1}')
                 polyimage[i] = (lam_endpts[i + 1] - lam_endpts[i]) * make_polychrome(lam_endpts[i],
                                                                                      lam_endpts[i + 1],
-                                                                                     hires_arrs,
+                                                                                     hires_arrs_prefiltered,
                                                                                      lam,
                                                                                      psftool,
                                                                                      allcoef,
@@ -1565,7 +1591,8 @@ def buildcalibrations(
                                                                                      xsize,
                                                                                      finexy=finexy,
                                                                                      reflam=lam,
-                                                                                     upsample=upsample,)
+                                                                                     upsample=upsample,
+                                                                                     prefiltered=True,)
                 _x, _y = psftool.return_locations(lam_midpts[i], allcoef, xindx, yindx)
                 if finecal:
                     _x += finexy[0]
@@ -1582,9 +1609,9 @@ def buildcalibrations(
             # numpy/scipy.ndimage work releases the GIL, so threads speed this up while sharing
             # memory, avoiding the pickling/spawn hazards of the old multiprocessing.Process pool.
             def _poly_task(i):
-                return make_polychrome(lam_endpts[i], lam_endpts[i + 1], hires_arrs, lam,
+                return make_polychrome(lam_endpts[i], lam_endpts[i + 1], hires_arrs_prefiltered, lam,
                                        psftool, allcoef, xindx, yindx, ysize,
-                                       xsize, finexy, lam, upsample)
+                                       xsize, finexy, lam, upsample, prefiltered=True)
 
             # executor.map yields results in submission order, so index == i throughout.
             with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
@@ -1647,6 +1674,17 @@ def buildcalibrations(
             hires_list = np.sort(glob.glob(f"{par.wavecalDir}hires_psflets_lam???.fits"))
             hires_arrs = [fits.open(filename)[0].data for filename in hires_list]
 
+        # As above (see makePolychrome block), pre-filter each calibration PSFlet array once
+        # rather than re-filtering it on every sub-wavelength inside make_hires_polychrome.
+        # Rebuilt here (rather than reusing the makePolychrome block's version) since
+        # hires_arrs may have just been reloaded above.
+        log.info('Prefiltering hires_arrs...')
+        hires_arrs_prefiltered = [h.astype(np.float64).copy() for h in hires_arrs]
+        for h in hires_arrs_prefiltered:
+            for i in range(h.shape[0]):
+                for j in range(h.shape[1]):
+                    h[i, j] = ndimage.spline_filter(h[i, j])
+
         lam_midpts, lam_endpts = calculateWaveList(par, lam, method='lstsq')
         num_wavelengths = len(lam_endpts)
         hirespoly = np.zeros((num_wavelengths - 1, ysize * upsample, xsize * upsample))
@@ -1655,7 +1693,7 @@ def buildcalibrations(
             for i in range(num_wavelengths - 1):
                 hirespoly[i] = (lam_endpts[i + 1] - lam_endpts[i]) * make_hires_polychrome(lam_endpts[i],
                                                                                            lam_endpts[i + 1],
-                                                                                           hires_arrs,
+                                                                                           hires_arrs_prefiltered,
                                                                                            lam,
                                                                                            psftool,
                                                                                            allcoef,
@@ -1663,16 +1701,17 @@ def buildcalibrations(
                                                                                            yindx,
                                                                                            ysize,
                                                                                            xsize,
-                                                                                           upsample=upsample) / upsample**2
+                                                                                           upsample=upsample,
+                                                                                           prefiltered=True) / upsample**2
         else:
             # Each wavelength bin's high-res polychrome slice is computed on a worker thread. The
             # heavy numpy/scipy.ndimage work releases the GIL, so threads speed this up while
             # sharing memory, avoiding the pickling/spawn hazards of the old
             # multiprocessing.Process pool.
             def _hirespoly_task(i):
-                return make_hires_polychrome(lam_endpts[i], lam_endpts[i + 1], hires_arrs, lam,
+                return make_hires_polychrome(lam_endpts[i], lam_endpts[i + 1], hires_arrs_prefiltered, lam,
                                              psftool, allcoef, xindx, yindx,
-                                             ysize, xsize, upsample)
+                                             ysize, xsize, upsample, prefiltered=True)
 
             # executor.map yields results in submission order, so index == i throughout.
             with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
