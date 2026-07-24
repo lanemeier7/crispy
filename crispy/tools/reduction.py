@@ -681,6 +681,9 @@ def get_cutout(im, x, y, psflets, dy=3, normpsflets=False):
 #         if im.ivar is not None:
 #             psflet_subarr[i] *= isig
 
+        if np.all(psflet_subarr[i] == 0):
+            log.warning(f"PSFlet {i} is all zeros in the cutout.")
+
     return subim, psflet_subarr, [y0, y1, x0, x1]
 
 

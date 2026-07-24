@@ -94,8 +94,9 @@ def make_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
 
     padding = 10
     image = np.zeros((ydim + 2 * padding, xdim + 2 * padding))
-    x = np.arange(image.shape[0])
-    x, y = np.meshgrid(x, x)
+    x = np.arange(image.shape[1])   # width  -> x-axis
+    y = np.arange(image.shape[0])   # height -> y-axis
+    x, y = np.meshgrid(x, y)        # default 'xy' indexing -> both arrays shape (ny, nx)
     npix = hires_arrs[0].shape[2] // upsample
 
     dloglam = (np.log(lam2) - np.log(lam1)) / nlam
@@ -154,13 +155,8 @@ def make_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
         ycen = np.reshape(ycen, -1)
         for i in range(xcen.shape[0]):
             if not (
-                    xcen[i] > npix //
-                    2 and xcen[i] < image.shape[0] -
-                    npix //
-                    2 and ycen[i] > npix //
-                    2 and ycen[i] < image.shape[0] -
-                    npix //
-                    2):
+                    xcen[i] > npix // 2 and xcen[i] < image.shape[1] - npix // 2 and
+                    ycen[i] > npix // 2 and ycen[i] < image.shape[0] - npix // 2):
                 continue
 
             # central pixel -> npix*upsample//2
@@ -238,8 +234,9 @@ def make_hires_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
     padding = 10
     image = np.zeros((ydim + 2 * padding, xdim + 2 * padding))
     hiresimg = np.zeros((image.shape[0] * upsample, image.shape[1] * upsample))
-    x = np.arange(hiresimg.shape[0])
-    x, y = np.meshgrid(x, x)
+    x = np.arange(hiresimg.shape[1])   # width  -> x-axis
+    y = np.arange(hiresimg.shape[0])   # height -> y-axis
+    x, y = np.meshgrid(x, y)           # default 'xy' indexing -> both arrays shape (ny, nx)
     npix = hires_arrs[0].shape[2]
 
     dloglam = (np.log(lam2) - np.log(lam1)) / nlam
@@ -297,17 +294,10 @@ def make_hires_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
         xcen = np.reshape(xcen, -1)
         ycen = np.reshape(ycen, -1)
         for i in range(xcen.shape[0]):
-            if not (xcen[i] > npix //
-                    (2 *
-                     upsample) and xcen[i] < image.shape[0] -
-                    npix //
-                    (2 *
-                     upsample) and ycen[i] > npix //
-                    (2 *
-                     upsample) and ycen[i] < image.shape[0] -
-                    npix //
-                    (2 *
-                     upsample)):
+            if not (xcen[i] > npix // (2 * upsample) and
+                    xcen[i] < image.shape[1] - npix // (2 * upsample) and
+                    ycen[i] > npix // (2 * upsample) and
+                    ycen[i] < image.shape[0] - npix // (2 * upsample)):
                 continue
             # central pixel -> npix*upsample//2
             iy1 = int(ycen[i] * upsample) - npix // 2
