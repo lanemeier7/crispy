@@ -195,7 +195,8 @@ def calculateWaveList(par, lam_list=None, num_wavelengths=None, method='lstsq'):
 def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                  hires=False, upsample=3, fitbkgnd=False,
                  specialPolychrome=None, returnall=False, mode='lstsq',
-                 niter=10, pixnoise=0.0, normpsflets=False, gain=1.0, show_fit_plots=False):
+                 niter=10, pixnoise=0.0, normpsflets=False, gain=1.0, show_fit_plots=False,
+                 lenslet_index_for_detailed_fit=None):
     '''
     Least-squares extraction of an IFS data cube from a raw detector image.
 
@@ -282,7 +283,9 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
             back to detector units.
     show_fit_plots: bool, optional (default False)
             If True, display a plot of the microspectrum and the largest PSFlet components for each lenslet during the fit.
-
+    lenslet_index_for_detailed_fit: int or None, optional (default None)
+            If provided, display a detailed fit plot for the specified lenslet index.
+    
     Returns
     -------
     cube :  Image instance
@@ -371,6 +374,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     #    slice of the PSFlet basis, then least-squares fit for the spectrum.
     #    Lenslets that fall off the detector (or fail to fit) are flagged NaN
     #    with zero weight.
+    # TODO, strong candidate for parallelization right here. 
     # ------------------------------------------------------------------
     for i in range(par.nlens):
         if i % 10 == 0:
@@ -414,8 +418,8 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                 # Create a multi-figure plot showing the subimage, and the slices of the psflet array that were used to create the model.
                 # This is useful for visually inspecting the fit quality and the contribution of each PSFlet.
                 # Use the psflet slices with the N largest coefficients to visualize their contribution.
-                if show_fit_plots:
-                    if i == 40: #cube.shape[1] // 2:
+                if lenslet_index_for_detailed_fit is not None:
+                    if i == lenslet_index_for_detailed_fit:
                         num_coefficients = 8
                         fig, ax = plt.subplots(num_coefficients + 2, 1, figsize=(8,10), 
                                             gridspec_kw={'hspace': 0.01, 'left': 0.3, 'right': 0.98, 'top':0.95, 'bottom':0.05})
@@ -454,7 +458,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         ax.set_xlabel('Lenslet X Index')
         ax.set_ylabel('Lenslet Y Index')
         ax.set_title('Chi-squared Map')
-        plt.show(block=True)
+        plt.show(block=False)
     # ------------------------------------------------------------------
     # 5. Reconstruct the detector image one wavelength at a time and remove
     #    each lenslet's best fit from the residual. _tag_psflets maps every

@@ -355,7 +355,8 @@ def reduceIFSMap(
             pixnoise=pixnoise,
             normpsflets=normpsflets,
             gain=gain,
-            show_fit_plots=True)
+            show_fit_plots=True,
+            lenslet_index_for_detailed_fit=None)
     elif method == 'optext':
         log.info("Using optimal extraction method")
         reducedName += '_red_optext'

@@ -1052,7 +1052,7 @@ def buildcalibrations(
         upsample=5,
         nsubarr=3,
         npix=13,
-        parallel=True,
+        parallel=False,
         inspect_first=True,
         apodize=False,
         lamsol=None,
@@ -1600,9 +1600,18 @@ def buildcalibrations(
                     _x += finexy[0]
                     _y += finexy[1]
 
-                # Append the x/y positions and "good" boolean array to the lists
-                _good = (_x > borderpix) * (_x < xsize - borderpix) * \
-                    (_y > borderpix) * (_y < ysize - borderpix)
+                # Append the x/y positions and "good" boolean array to the lists.
+                # If the wavelength calibration was restricted to a sub-region of the
+                # detector (par.fitting_window), use those bounds instead of the full
+                # detector so that lenslets outside the calibrated area are excluded,
+                # matching the validity check done in PSFLets.genpixsol().
+                if fitting_window is None:
+                    _good = (_x > borderpix) * (_x < xsize - borderpix) * \
+                        (_y > borderpix) * (_y < ysize - borderpix)
+                else:
+                    xmin, xmax, ymin, ymax = fitting_window
+                    _good = (_x > xmin + borderpix) * (_x < xmax - borderpix) * \
+                        (_y > ymin + borderpix) * (_y < ymax - borderpix)
                 xpos += [_x]
                 ypos += [_y]
                 good += [_good]
@@ -1626,9 +1635,16 @@ def buildcalibrations(
                         _x += finexy[0]
                         _y += finexy[1]
 
-                    # Append the x/y positions and "good" boolean array to the lists
-                    _good = (_x > borderpix) * (_x < xsize - borderpix) * \
-                        (_y > borderpix) * (_y < ysize - borderpix)
+                    # Append the x/y positions and "good" boolean array to the lists.
+                    # See the non-parallel branch above for why fitting_window is used
+                    # here when set.
+                    if fitting_window is None:
+                        _good = (_x > borderpix) * (_x < xsize - borderpix) * \
+                            (_y > borderpix) * (_y < ysize - borderpix)
+                    else:
+                        xmin, xmax, ymin, ymax = fitting_window
+                        _good = (_x > xmin + borderpix) * (_x < xmax - borderpix) * \
+                            (_y > ymin + borderpix) * (_y < ymax - borderpix)
                     xpos += [_x]
                     ypos += [_y]
                     good += [_good]
