@@ -282,12 +282,53 @@ def reduceIFSMap(
             Contains all IFS parameters
     IFSimageName : string or 2D ndarray
             Path of image file, of 2D ndarray.
-    method : 'lstsq', 'optext'
+    method : 'lstsq', 'lstsq_conv', 'RL', 'RL_conv', 'optext', 'sum'
             Method used for reduction.
             'lstsq': use the knowledge of the PSFs at each location and each wavelength and fits
             the microspectrum as a weighted sum of these PSFs in the least-square sense. Can weigh the data by its variance.
+            'lstsq_conv': preferred least-squares variant; iterative fit that refines the noise model each pass.
+            'RL', 'RL_conv': legacy Richardson-Lucy deconvolution modes.
             'optext': use a matched filter to appropriately weigh each pixel and assign the fluxes, making use of the inverse
             wavlength calibration map. Then remap each microspectrum onto the desired wavelengths
+            'sum': like 'optext' but simply sums the pixels in each microspectrum instead of matched-filtering them.
+    smoothbad: bool, optional (default True)
+            Passed through to the extraction routine as ``smoothandmask``. If True, smooth the extracted cube over
+            bad lenslets and replace masked spectral values with inverse-variance-weighted neighbors.
+    name: string, optional (default None)
+            Base name used for the output reduced-cube files when ``IFSimageName`` is a 2D ndarray rather than a
+            filepath. If None, a timestamp is used instead. Ignored when ``IFSimageName`` is a string, in which case
+            the input filename is used instead.
+    hires: bool, optional (default False)
+            Only used for the 'lstsq'-family methods. If True, also build an upsampled ("hi-res") reconstruction of
+            the detector image using high-resolution PSFlet models.
+    dy: int, optional (default 3)
+            Only used for the 'lstsq'-family methods. Half-width (in pixels) of the rectangular cutout extracted
+            around each PSFlet in the polychrome image.
+            #TODO, this is a good candidate variable for renaming repo-wide. Maybe "cutout_height_halfwidth"?
+    fitbkgnd: bool, optional (default True)
+            Only used for the 'lstsq'-family methods. If True, fit a uniform ("DC") background offset under each
+            microspectrum.
+    specialPolychrome: array-like or None, optional (default None)
+            Only used for the 'lstsq'-family methods. If provided, use this custom polychrome PSFlet basis instead of
+            loading one from disk.
+    returnall: bool, optional (default False)
+            Only used for the 'lstsq'-family methods. If True, return a 3-tuple ``(cube, model, resid)`` where
+            ``model`` is the reconstructed detector image and ``resid`` is the data minus the model, instead of just
+            ``cube``.
+    niter: int, optional (default 10)
+            Only used for the iterative 'lstsq'-family methods ('lstsq_conv', 'RL_conv'). Number of iterations for
+            the fit.
+    pixnoise: float or None, optional (default None)
+            Only used for the 'lstsq'-family methods. Constant per-pixel noise term (variance floor) added to the
+            modeled photon variance. If None, uses the sigma-clipped standard deviation of the input image squared.
+    medsub: bool, optional (default True)
+            If True, subtract the sigma-clipped median of the input image from the image before extraction.
+    normpsflets: bool, optional (default False)
+            Only used for the 'lstsq'-family methods. If True, normalize each PSFlet in the basis to unit sum before
+            fitting. Not generally recommended.
+    gain: float, optional (default 0.5)
+            Only used for the 'lstsq'-family methods. Detector gain (ADU/photoelectron), applied to convert raw
+            detector units to photoelectrons before fitting (and converted back afterwards).
 
     Returns
     -------
@@ -397,6 +438,12 @@ def reduceIFSMapList(
             the microspectrum as a weighted sum of these PSFs in the least-square sense. Can weigh the data by its variance.
             'optext': use a matched filter to appropriately weigh each pixel and assign the fluxes, making use of the inverse
             wavlength calibration map. Then remap each microspectrum onto the desired wavelengths
+    parallel: bool, optional (default True)
+            Whether to reduce the images in ``IFSimageNameList`` in parallel across CPUs (one image per worker
+            process), rather than sequentially in a for loop.
+    smoothbad: bool, optional (default True)
+            Passed through to the extraction routine as ``smoothandmask``. If True, smooth the extracted cube over
+            bad lenslets and replace masked spectral values with inverse-variance-weighted neighbors.
 
     '''
     # reset header (in the case where we do simulation followed by extraction)
@@ -564,7 +611,7 @@ def createWavecalFiles(par, lamlist, dlam=1., flux=None, background=0.0):
     return filelist
 
 
-def quickMonochromatic(par=None, 
+def quickMonochromatic(par=None,
                        fwhm=2.0,
                        coefs=None,
                        Dx=0.0,
@@ -575,6 +622,50 @@ def quickMonochromatic(par=None,
                        nlens=108,
                        npix=1024,
                        returnCoords=False):
+    '''
+    Quickly simulates a monochromatic detector frame by dropping a Gaussian PSFlet at each lenslet's
+    (undispersed) centroid location, without going through the full polychromeIFS propagation.
+
+    Parameters
+    ----------
+    par: Parameter instance or None, optional (default None)
+            Contains all IFS parameters. Used to derive ``coefs``, ``nlens``, and ``npix`` (from ``par.pitch``,
+            ``par.pixsize``, ``par.philens``, ``par.nlens`` and ``par.npix``) when those are not supplied directly.
+            Must be provided if ``coefs`` is None.
+    fwhm: float, optional (default 2.0)
+            Full width at half maximum, in detector pixels, of the Gaussian PSFlet placed at each lenslet location.
+    coefs: array-like or None, optional (default None)
+            Flattened polynomial-transform coefficients (as used by ``crispy.tools.locate_psflets.transform``) that
+            map lenslet grid indices to detector (x, y) coordinates. If None, these are computed from ``par``
+            (assuming no dispersion, i.e. a simple rotated/scaled undispersed lenslet grid) offset by ``Dx``/``Dy``.
+    Dx: float, optional (default 0.0)
+            Offset in detector pixels added to the x centroid of the lenslet grid. Only used when ``coefs`` is None
+            and is derived from ``par``.
+    Dy: float, optional (default 0.0)
+            Offset in detector pixels added to the y centroid of the lenslet grid. Only used when ``coefs`` is None
+            and is derived from ``par``.
+    flux: float, optional (default 1.0)
+            Peak flux (in counts) multiplying each Gaussian PSFlet placed on the detector.
+    gsize: int, optional (default 5)
+            Half-size, in detector pixels, of the square cutout used to render each Gaussian PSFlet. The full cutout
+            is ``2*gsize`` pixels across.
+    order: int, optional (default 3)
+            Order of the polynomial transform used to convert lenslet grid indices into detector coordinates (see
+            ``coefs`` above and ``crispy.tools.locate_psflets.transform``).
+    nlens: int, optional (default 108)
+            Number of lenslets across the array. Overridden by ``par.nlens`` if ``par`` is provided.
+    npix: int, optional (default 1024)
+            Number of pixels across the detector. Overridden by ``par.npix`` if ``par`` is provided.
+    returnCoords: bool, optional (default False)
+            If True, also return the (x, y) detector coordinates of each lenslet centroid.
+
+    Returns
+    -------
+    detectorFrame: 2D ndarray
+            Simulated monochromatic detector frame. Only returned (along with ``(Xc, Yc)`` if ``returnCoords`` is
+            True); the function currently falls through to an implicit ``None`` if ``returnCoords`` is False.
+
+    '''
 
     if coefs is None:
         if par is None: 

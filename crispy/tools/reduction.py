@@ -329,7 +329,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     # ------------------------------------------------------------------
     if fitbkgnd:
         n_add = 1
-        psflets = _add_row(psflets, n=n_add, dtype=np.float64)
+        psflets = _add_row(psflets, n=n_add)
         psflets[-n_add:] = 0
         psflets[-1, 4:-4, 4:-4] = 1
         xindx = _add_row(xindx, n=n_add)
@@ -374,7 +374,15 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     #    slice of the PSFlet basis, then least-squares fit for the spectrum.
     #    Lenslets that fall off the detector (or fail to fit) are flagged NaN
     #    with zero weight.
-    # TODO, strong candidate for parallelization right here. 
+    # This loop looks like an obvious parallelization target (each lenslet writes a disjoint
+    # column of cube/ivarcube/chisq), but two attempts to parallelize it both made it slower and
+    # were abandoned: a ThreadPoolExecutor version was ~2.2x slower because the per-lenslet work is
+    # dominated by small-array/Python-level overhead rather than GIL-releasing BLAS calls, so
+    # threads just added contention; a ProcessPoolExecutor version (slicing each lenslet's cutout in
+    # the main process, then shipping it to worker processes for the fit) was also ~2x slower
+    # because each cutout was ~628KB for the DST2 data, so ~9GB of pickling/IPC traffic across
+    # 14,415 lenslets swamped any compute savings -- always measure real per-task payload size before
+    # assuming a "ship the small stuff" design is actually small. 
     # ------------------------------------------------------------------
     for i in range(par.nlens):
         if i % 10 == 0:
