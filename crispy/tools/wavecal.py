@@ -1885,8 +1885,8 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
                           sensor_regions_to_inspect=[[3124, 2088]], window_size=100,
                           plotting_bounds_pixels=None):
     """
-    Generate plots illustrating the dispersion map at specified wavelengths,
-    and a plot of dispersion vs. wavelength for one or more user-specified lenslets.
+    Generate many plots that may be helpful for troubleshooting or visualizing
+    the wavelength solution polynomial. 
 
     Parameters:
     -----------
@@ -1903,7 +1903,7 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
     sensor_dimensions : tuple, optional
         Dimensions of the sensor in pixels, used for plotting boundaries of the detector
     lenslets_to_plot : list[list[int, int]], optional
-        Lenslet coordinates to use for the dispersion-vs-wavelength plot, in the form
+        Lenslet indices to use for the dispersion-vs-wavelength plot, in the form
         [[x1, y1], [x2, y2], ...] where [0, 0] corresponds to the center lenslet.
         If None, defaults to [[0, 0]].
     sensor_regions_to_inspect : list[list[float, float]], optional

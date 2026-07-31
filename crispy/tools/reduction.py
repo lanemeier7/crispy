@@ -428,7 +428,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                 # Use the psflet slices with the N largest coefficients to visualize their contribution.
                 if lenslet_index_for_detailed_fit is not None:
                     if i == lenslet_index_for_detailed_fit:
-                        num_coefficients = 8
+                        num_coefficients = 20
                         fig, ax = plt.subplots(num_coefficients + 2, 1, figsize=(8,10), 
                                             gridspec_kw={'hspace': 0.01, 'left': 0.3, 'right': 0.98, 'top':0.95, 'bottom':0.05})
                         fig.suptitle(f'Lenslet ({i}, {j})')
@@ -437,15 +437,18 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                         vmax = np.nanmax(subim)
                         ax[0].imshow(subim, origin='lower', vmin=vmin, vmax=vmax)
                         ax[0].set_xticks([])
+                        ax[0].set_yticks([])
                         ax[0].text(-0.1, 0.5, f'Microspectrum\n(observed)', transform=ax[0].transAxes, va='center', ha='right', fontsize=10)
                         ax[1].imshow(modelij, origin='lower', vmin=vmin, vmax=vmax)
                         ax[1].set_xticks([])
+                        ax[1].set_yticks([])
                         ax[1].text(-0.1, 0.5, f'Microspectrum\n(modeled)\nChi-sq: {chisq[j, i]:.1f}', transform=ax[1].transAxes, va='center', ha='right', fontsize=10)
                         largest_indices = np.flip(np.argsort(cube[:,j,i])[-num_coefficients:])
                         for idx_pos, idx in enumerate(largest_indices):
-                            ax[idx_pos + 2].imshow(cube[idx, j, i] * psflet_subarr[idx], origin='lower', vmin=vmin, vmax=vmax)
+                            ax[idx_pos + 2].imshow(2 * cube[idx, j, i] * psflet_subarr[idx], origin='lower', vmin=vmin, vmax=vmax)
                             coef_value = round(cube[idx, j, i], 1)
                             ax[idx_pos + 2].set_xticks([])
+                            ax[idx_pos + 2].set_yticks([])
                             ax[idx_pos + 2].text(-0.1, 0.5, f'{lam_endpts[idx-1]:.1f} - {lam_endpts[idx]:.1f} nm\namplitude: {coef_value}', transform=ax[idx_pos + 2].transAxes, va='center', ha='right', fontsize=10)
                             
                         fig.tight_layout()
