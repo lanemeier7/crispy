@@ -495,8 +495,49 @@ def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, normalize=True):
     Build high resolution images of the undersampled PSF using the
     monochromatic frames.
 
-    Inputs:
-    1.
+    The detector is divided into an nsubarr x nsubarr grid of regions.
+    For each region, all of the well-fit PSFlets whose centroids fall
+    inside that region are stacked at upsampled resolution and combined
+    (via a trimmed mean and light Gaussian smoothing) into a single
+    high-resolution PSFlet model. This captures the variation of the PSF
+    shape across the field of view.
+
+    Parameters
+    ----------
+    x : array of float
+        Detector x-coordinates (column positions) of the PSFlet centroids,
+        flattened to 1D. Produced by psftool.return_locations for a given
+        wavelength.
+    y : array of float
+        Detector y-coordinates (row positions) of the PSFlet centroids,
+        flattened to 1D, matching x element-for-element.
+    good : array of bool or int
+        Flag for each PSFlet indicating whether its centroid is reliable
+        (True/nonzero) and should be included in the stack. Comes from
+        psftool.good, flattened to 1D.
+    image : Image
+        Monochromatic frame for this wavelength; the pixel data is read
+        from image.data.
+    upsample : int
+        Oversampling factor of the high-resolution model relative to the
+        native detector pixellation. Default 5.
+    nsubarr : int
+        Number of sub-regions per axis (nsubarr x nsubarr total) used to
+        track the spatial variation of the PSF across the detector.
+        Default 5.
+    npix : int
+        Size, in native detector pixels, of the square cutout extracted
+        around each PSFlet centroid. Default 13.
+    normalize : bool
+        If True, scale each high-resolution PSFlet so that it integrates
+        to unit flux when resampled with an interpolator. Default True.
+
+    Returns
+    -------
+    hires_arr : numpy.ndarray
+        Array of shape (nsubarr, nsubarr, upsample * (npix + 1),
+        upsample * (npix + 1)) holding one high-resolution PSFlet model
+        per detector sub-region.
     """
 
     ###################################################################
@@ -518,15 +559,22 @@ def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, normalize=True):
     # yreg and xreg denote the regions of the image.  Each region will
     # have roughly 20,000/nsubarr**2 PSFlets from which to construct
     # the resampled version.  For 5x5 (default), this is roughly 800.
+    # TODO, this hardcoded "20,000" value might have worked for PISCES, but is now out of date. It should be replaced with a more general estimate or the language should be updated accordingly. 
     ###################################################################
 
     for yreg in range(nsubarr):
+        # i1, i2: lower and upper detector-row bounds of this sub-region
+        # along the y (vertical) axis. Clipped inward by npix so that a
+        # full npix cutout around any included centroid stays on-detector.
         i1 = yreg * image.data.shape[0] // nsubarr
         i2 = i1 + image.data.shape[0] // nsubarr
         i1 = max(i1, npix)
         i2 = min(i2, image.data.shape[0] - npix)
 
         for xreg in range(nsubarr):
+            # j1, j2: lower and upper detector-column bounds of this
+            # sub-region along the x (horizontal) axis, clipped inward by
+            # npix for the same on-detector cutout guarantee as i1, i2.
             j1 = xreg * image.data.shape[1] // nsubarr
             j2 = j1 + image.data.shape[1] // nsubarr
             j1 = max(j1, npix)
@@ -540,8 +588,7 @@ def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, normalize=True):
             ############################################################
 
             k = 0
-            subim = np.zeros((20000 / nsubarr**2, upsample *
-                              (npix + 1), upsample * (npix + 1)))
+            subim = np.zeros((int(20000 / nsubarr**2), upsample * (npix + 1), upsample * (npix + 1)))
 
             ############################################################
             # Now put the PSFlets in.  The pixel of index
@@ -662,8 +709,14 @@ def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, normalize=True):
             # interpolator.
             ############################################################
 
-            if normalize:
-                meanpsf *= upsample**2 / np.sum(meanpsf)
+            # Guard against empty sub-regions: when a fitting window is used, the image is
+            # full-frame but only the windowed sub-regions collect any PSFlets. Regions outside
+            # the window gather zero PSFlets, so meanpsf sums to 0 and normalizing would produce
+            # NaN/inf. Leave those regions all-zero; they are never sampled by a "good" lenslet
+            # (genpixsol already excludes out-of-window lenslets), so zero is correct.
+            psfsum = np.sum(meanpsf)
+            if normalize and psfsum != 0:
+                meanpsf *= upsample**2 / psfsum
             hires_arr[yreg, xreg] = meanpsf
 
     return hires_arr
@@ -711,7 +764,7 @@ def makeHires(
         parallel=True,
         savehiresimages=True,
         upsample=5,
-        nsubarr=5,
+        nsubarr=5, #TODO, make it optional for this argument to be a 2-element list. In the case of a rectangular detector, the number of subarrays in x and y may be different.
         npix=13,
         finexy=None,
         reflam=None):
@@ -738,6 +791,55 @@ def makeHires(
        for multiple wavelengths.
 
     5. The high-resolution PSFLet models can optionally be saved as FITS files.
+
+    Parameters
+    ----------
+    par : Params
+        Parameter/configuration object. Notably par.gaussian_hires selects
+        idealized Gaussian PSFlet models over stacking real data, and
+        par.wavecalDir gives the output directory for saved FITS files.
+    xindx : ndarray of int
+        X indices of the lenslets in the lenslet array (typically a 2D
+        meshgrid), passed to psftool.return_locations to map lenslets to
+        detector positions.
+    yindx : ndarray of int
+        Y indices of the lenslets in the lenslet array, matching xindx.
+    lam : array of float
+        Wavelengths (nm) for which to build high-resolution PSFlet models;
+        one model array is produced per wavelength.
+    allcoef : list of lists of float
+        Polynomial coefficients of the wavelength solution, used by
+        psftool.return_locations to compute PSFlet centroids at each lam.
+    psftool : PSFLets
+        PSFlet-location helper. Provides return_locations for centroid
+        positions and the good mask flagging reliable lenslets.
+    imlist : list of Image, optional
+        Monochromatic detector frames, one per wavelength in lam, from
+        which the PSFlet cutouts are extracted. Required unless
+        par.gaussian_hires is True.
+    parallel : bool
+        If True, compute each wavelength's model on a worker thread via a
+        ThreadPoolExecutor. Default True.
+    savehiresimages : bool
+        If True, write each high-resolution PSFlet model to a FITS file in
+        par.wavecalDir. Default True.
+    upsample : int
+        Oversampling factor of the high-resolution models relative to the
+        native detector pixellation. Default 5.
+    nsubarr : int
+        Number of detector sub-regions per axis (nsubarr x nsubarr total)
+        used to track spatial variation of the PSF across the field.
+        Default 5.
+    npix : int
+        Size, in native detector pixels, of the square cutout extracted
+        around each PSFlet centroid. Default 13.
+    finexy : tuple of ndarray, optional
+        Optional (dx, dy) fine-adjustment offsets added to the centroid
+        positions returned by psftool.return_locations. Default None (no
+        adjustment).
+    reflam : float or array of float, optional
+        Reference wavelength(s) at which the fine-transform centroid grids
+        were computed. Default None.
 
     Returns:
     hires_arrs : list of numpy.ndarray
@@ -804,8 +906,7 @@ def makeHires(
                 # else:
                 #     xpos, ypos = fine_transform(
                 #         lam[i], xindx, yindx, reflam, finexy[0], finexy[1])
-                xpos, ypos = psftool.return_locations(
-                    lam[i], allcoef, xindx, yindx)
+                xpos, ypos = psftool.return_locations(lam[i], allcoef, xindx, yindx)
                 if finexy is not None:
                     xpos += finexy[0]
                     ypos += finexy[1]
@@ -946,11 +1047,12 @@ def evaluate_dispersion_solution_fit_quality(image_data, x_calc, y_calc,
     Parameters
     ----------
     image_data: 2D ndarray
-            The calibration image (possibly cropped to a fitting window) in which to detect peaks.
+            The calibration image in which to detect peaks. When a fitting window is in use, pass
+            the masked data (im.data * mask) so detection is scoped to the calibrated region; the
+            image stays full-frame, so no coordinate offset is needed.
     x_calc, y_calc: ndarray
-            Calculated PSFlet x/y positions from the optimized polynomial coefficients. These may be
-            in full-frame coordinates while image_data is cropped; x_offset/y_offset reconcile the
-            two frames.
+            Calculated PSFlet x/y positions from the optimized polynomial coefficients, in
+            full-frame detector coordinates.
     output_directory: string
             Directory in which to save the diagnostic PNG.
     lam: float (optional)
@@ -958,8 +1060,8 @@ def evaluate_dispersion_solution_fit_quality(image_data, x_calc, y_calc,
     window_size: int
             Box size (pixels) passed to find_peaks for local-maximum detection. Default 9.
     x_offset, y_offset: int
-            Pixel offset (the fitting-window origin) added to the measured peak coordinates so they
-            share the full-frame coordinate system of x_calc/y_calc. Default 0.
+            Pixel offset added to the measured peak coordinates. Retained for backward
+            compatibility; with full-frame masking both default to 0 (no reconciliation needed).
     pixel_pitch: float (optional)
             Detector pixel pitch in microns. If provided, the plot and colorbar are scaled to display
             positions and distances in microns instead of pixels. Default None (use pixels).
@@ -1165,12 +1267,13 @@ def buildcalibrations(
             Coefficient array corresponding to an initial guess of the polynomial map. Leave to None
             in order to start from scratch.
     par.fitting_window: list of int (optional par attribute)
-            [xmin, xmax, ymin, ymax] region (in full-frame detector pixels) to crop all ingested
-            images to before they are passed to locatePSFlets(). Restricts the PSFlet fit to a
-            sub-region of the sensor. The returned positions and polynomial coefficients are
-            offset back into full-frame detector coordinates, so lamsol.dat remains compatible with
-            uncropped science data. Read from the optional par.fitting_window attribute; if it is
-            not set on par, the full image is used.
+            [xmin, xmax, ymin, ymax] region (in full-frame detector pixels) that restricts the
+            PSFlet fit to a sub-region of the sensor. Images are kept full-frame; the fit mask is
+            zeroed everywhere outside this window so those pixels do not influence peak-finding or
+            the coefficient fit. Because nothing is cropped, positions and polynomial coefficients
+            stay in full-frame detector coordinates and lamsol.dat remains compatible with science
+            data. Read from the optional par.fitting_window attribute; if it is not set on par, the
+            full image is used.
     evaluate_fit_quality: Boolean
             If True, produce a diagnostic scatterplot of the dispersion-solution fit quality for the
             first image in the filelist. Detected PSFlet peaks are matched to the nearest
@@ -1225,8 +1328,8 @@ def buildcalibrations(
                 - a boolean array indicating whether each lenslet is good or not (e.g. when it is outside of the detector area)
 
     """
-    # Optional detector crop region [xmin, xmax, ymin, ymax] for the PSFlet fit.
-    # Not set by default; travels on par when the caller wants a sub-region fit.
+    # Optional detector sub-region [xmin, xmax, ymin, ymax] for the PSFlet fit, applied by masking
+    # (not cropping). Not set by default; travels on par when the caller wants a sub-region fit.
     fitting_window = par.fitting_window if hasattr(par, 'fitting_window') else None
 
     if par.outdir is not None:
@@ -1290,13 +1393,20 @@ def buildcalibrations(
             im = Image(filename=filepath)
             plt.close('all')
 
-            # Optionally crop every ingested image to the requested fitting window before any
-            # statistics, masking, or PSFlet location is performed. The mask is full-frame, so it
-            # is sliced to the same region to keep im.data * mask shape-consistent in locatePSFlets.
+            # Optionally restrict the PSFlet fit to the requested fitting window. Rather than
+            # cropping im.data (which would put positions/coefficients in a cropped coordinate
+            # frame and break downstream full-frame consumers like gethires/make_polychrome), we
+            # keep im.data full-frame and zero the fit mask everywhere outside the window. Since
+            # the mask is locatePSFlets' inverse-variance weight (it multiplies the data directly),
+            # zeroed-weight pixels contribute nothing to peak-finding or the coefficient fit, while
+            # every coordinate stays in a single full-frame system end-to-end.
             if fitting_window is not None:
                 xmin, xmax, ymin, ymax = fitting_window
-                im.data = im.data[ymin:ymax, xmin:xmax]
-                mask_use = mask[ymin:ymax, xmin:xmax]
+                mask_use = mask.copy()
+                mask_use[:ymin] = 0
+                mask_use[ymax:] = 0
+                mask_use[:, :xmin] = 0
+                mask_use[:, xmax:] = 0
             else:
                 mask_use = mask
 
@@ -1309,38 +1419,24 @@ def buildcalibrations(
             # mask *= (im.data-median>3*std)
             imlist += [im]
             if genwavelengthsol:
-                # wavelength calibration step from CHARIS. Note that when a fitting_window is used,
-                # the returned positions and coefficients are in the cropped coordinate frame; the
-                # working copies (coef, x, y) are kept in that frame so the chained guess for the
-                # next wavelength and the finecal cutouts below stay consistent with the cropped
-                # im.data.
+                # wavelength calibration step from CHARIS. im.data is full-frame (the fitting
+                # window is applied via mask_use, not by cropping), so the returned positions and
+                # coefficients are already in full-frame detector coordinates. No offset
+                # reconciliation is needed for storage or for the diagnostics below.
                 x, y, good, coef = locatePSFlets(im, polyorder=order, mask=mask_use, sig=1.,
                                     coef=coef, phi=par.philens,
                                     scale=par.pitch / par.pixsize, nlens=par.nlens,
                                     trimfrac=trimfrac)
 
-                # Offset the coefficients back into full-frame detector coordinates for storage so
-                # that lamsol.dat remains valid for uncropped science data. A pure origin shift only
-                # affects the two constant (translation) terms of the polynomial.
-                if fitting_window is not None:
-                    half_coef = (order + 1) * (order + 2) // 2
-                    coef_fullframe = list(coef)
-                    coef_fullframe[0] += xmin
-                    coef_fullframe[half_coef] += ymin
-                else:
-                    coef_fullframe = list(coef)
-                allcoef += [[lamlist[i]] + list(coef_fullframe)]
+                allcoef += [[lamlist[i]] + list(coef)]
 
-                # Evaluate the dispersion-solution fit quality for the first image only. The
-                # detected peaks (from the cropped im.data) and the calculated positions are both
-                # offset into full-frame detector coordinates so the diagnostic plot matches the
-                # convention of the other calibration outputs.
+                # Evaluate the dispersion-solution fit quality for the first image only. Peaks are
+                # detected in the masked data so the diagnostic is scoped to the calibrated region;
+                # everything is already in full-frame coordinates, so no offsets are applied.
                 if evaluate_fit_quality:
-                    x_offset = fitting_window[0] if fitting_window is not None else 0
-                    y_offset = fitting_window[2] if fitting_window is not None else 0
                     evaluate_dispersion_solution_fit_quality(
-                        im.data, x + x_offset, y + y_offset, outdir,
-                        lam=lamlist[i], x_offset=x_offset, y_offset=y_offset, pixel_pitch=par.pixsize * 1E6)
+                        im.data * mask_use, x, y, outdir,
+                        lam=lamlist[i], pixel_pitch=par.pixsize * 1E6)
 
                 if finecal:
                     log.info('Finding individual centroids (experimental)')
