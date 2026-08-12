@@ -16,7 +16,7 @@ setup(
     author='Maxime Rizzo',
     author_email = 'maxime.j.rizzo@nasa.gov',
     url = 'https://github.com/mjrfringes/crispy',
-    packages =['crispy','crispy.tools'],
+    packages =['crispy','crispy.tools','crispy.configs','crispy.configs.DST2','crispy.configs.PISCES'],
     license = 'GNU GPLv3',
     description ='The Coronagraph and Rapid Imaging Spectrograph in Python',
     package_dir = {"crispy":'crispy', "crispy.tools":'crispy/tools'},

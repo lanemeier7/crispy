@@ -43,7 +43,7 @@ class Params(object):
         # NOTE: historically CRISPY was built with square detectors in mind, so npix refers to both dimensions. Here we have a non-square detector, so npix refers to the x-dimension, the larger of the two dimensions.
         self.npix = 6248            # Number of pixels in final detector. 
         self.pixsize = 3.76e-6      # Pixel size (meters)
-        self.fitting_window = [1262, 4986, 226, 3950]  # Pixel bounds [xmin, xmax, ymin, ymax] for fitting lamsol.dat
+        self.fitting_window = [1212, 4936, 0, 3724]  # Pixel bounds [xmin, xmax, ymin, ymax] for fitting lamsol.dat
         self.pxperdetpix = 1        # Oversampling of the final detector pixels
         self.convolve = True        # whether to convolve the existing kernels with gaussian kernel (simulating defocus)
         self.FWHM = 2               # FWHM of gaussian kernel

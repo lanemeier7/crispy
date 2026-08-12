@@ -13,6 +13,7 @@ from scipy.special import erf
 from crispy.tools.reduction import calculateWaveList
 import matplotlib.pyplot as plt
 from matplotlib.collections import PatchCollection
+from matplotlib.colors import LogNorm
 from scipy import ndimage
 import multiprocessing
 from concurrent.futures import ThreadPoolExecutor
@@ -74,7 +75,7 @@ def do_inspection(par, image, xpos, ypos, lam, display_plot=False):
     norm = mpl.colors.Normalize(vmin=mean, vmax=mean + 5 * std)
     ax.imshow(image, cmap='gray_r', norm=norm, interpolation='nearest', origin='lower')
     patches = [plt.Circle(val, 3) for val in vals]
-    collection = PatchCollection(patches, color='blue', lw=1, alpha=0.5)
+    collection = PatchCollection(patches, color='blue', lw=0.7, alpha=0.5)
     ax.add_collection(collection)
     fig.savefig(os.path.join(par.outdir, 'inspection_%3d.png' % (lam)), dpi=600)
 
@@ -393,7 +394,36 @@ def make_hires_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
     return hiresimg
 
 
-def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, normalize=True):
+def _nsubarr_xy(nsubarr):
+    """
+    Ensure nsubarr is expressed as (nsubarr_x, nsubarr_y) region counts.
+
+    The detector is divided into a grid of sub-regions. Historically nsubarr
+    was a single scalar N describing an N x N (square) grid, which only makes
+    sense for a square detector. For a rectangular detector the number of
+    regions along each axis may differ, so nsubarr may also be given as a
+    2-element [nx, ny] sequence.
+
+    Parameters
+    ----------
+    nsubarr : int or sequence of two ints
+        Either a scalar (square grid, nsubarr_x == nsubarr_y == nsubarr) or a
+        2-element [nx, ny] giving the number of regions along the x- and
+        y-axis respectively.
+
+    Returns
+    -------
+    (nsubarr_x, nsubarr_y) : tuple of int
+        Number of detector sub-regions along the x- (columns) and y- (rows)
+        axes. Note the stored hires array is shaped (nsubarr_y, nsubarr_x, ...)
+        since axis 0 indexes detector rows (y) and axis 1 indexes columns (x).
+    """
+    if np.isscalar(nsubarr):
+        return int(nsubarr), int(nsubarr)
+    return int(nsubarr[0]), int(nsubarr[1])
+
+
+def get_sim_hires(par, lam, upsample=10, nsubarr=[5, 5], npix=13, normalize=True):
     """
     Build high resolution images of the undersampled PSF using the
     monochromatic frames. This version of the function uses the perfect
@@ -408,8 +438,11 @@ def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, normalize=True):
         Wavelength for which to generate the high resolution PSF
     upsample : int, optional
         Upsampling factor for the high resolution array. Default is 10
-    nsubarr : int, optional
-        Number of subarrays in each dimension. Default is 1
+    nsubarr : int or [nx, ny], optional
+        Number of detector sub-regions. A scalar gives a square nsubarr x
+        nsubarr grid; a 2-element [nx, ny] gives the number of regions along
+        the x- and y-axis respectively (for rectangular detectors).
+        Default is [5, 5].
     npix : int, optional
         Number of pixels in the base PSF. Default is 13
     normalize : bool, optional
@@ -418,14 +451,16 @@ def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, normalize=True):
     Returns
     -------
     hires_arr : ndarray
-        4D array of shape (nsubarr, nsubarr, array_size, array_size) containing
-        the high resolution PSFlets
+        4D array of shape (nsubarr_y, nsubarr_x, array_size, array_size)
+        containing the high resolution PSFlets
     """
+    nsubarr_x, nsubarr_y = _nsubarr_xy(nsubarr)
+
     # Determine side length of the upsampled array
-    array_size = upsample * (npix + 1)  
+    array_size = upsample * (npix + 1)
 
     # Allocate memory for the array that we will fill out one slice at a time
-    hires_arr = np.zeros((nsubarr, nsubarr, array_size, array_size))
+    hires_arr = np.zeros((nsubarr_y, nsubarr_x, array_size, array_size))
 
     # Generate a grid of (X,Y) grid coordinates
     _x = np.arange(array_size) - array_size // 2
@@ -443,9 +478,9 @@ def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, normalize=True):
     if normalize:
         psflet *= upsample**2 / np.sum(psflet)
 
-    # Because the output is expected to ahve nsubarr * nsubarr entries, fill the array with the same PSFLet
-    for i in range(nsubarr):
-        for j in range(nsubarr):
+    # Because the output is expected to have nsubarr_y * nsubarr_x entries, fill the array with the same PSFLet
+    for i in range(nsubarr_y):
+        for j in range(nsubarr_x):
             hires_arr[i, j] = psflet
 
     return hires_arr
@@ -490,12 +525,12 @@ def get_sim_hires(par, lam, upsample=10, nsubarr=1, npix=13, normalize=True):
 #     return epsf.data
 #             
 
-def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, normalize=True):
+def gethires(x, y, good, image, upsample=5, nsubarr=[5, 5], npix=13, normalize=True):
     """
     Build high resolution images of the undersampled PSF using the
     monochromatic frames.
 
-    The detector is divided into an nsubarr x nsubarr grid of regions.
+    The detector is divided into an nsubarr_x x nsubarr_y grid of regions.
     For each region, all of the well-fit PSFlets whose centroids fall
     inside that region are stacked at upsampled resolution and combined
     (via a trimmed mean and light Gaussian smoothing) into a single
@@ -521,10 +556,12 @@ def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, normalize=True):
     upsample : int
         Oversampling factor of the high-resolution model relative to the
         native detector pixellation. Default 5.
-    nsubarr : int
-        Number of sub-regions per axis (nsubarr x nsubarr total) used to
-        track the spatial variation of the PSF across the detector.
-        Default 5.
+    nsubarr : int or [nx, ny]
+        Number of detector sub-regions used to track the spatial variation
+        of the PSF across the field. A scalar gives a square nsubarr x
+        nsubarr grid; a 2-element [nx, ny] gives the number of regions along
+        the x- and y-axis respectively (for rectangular detectors).
+        Default [5, 5].
     npix : int
         Size, in native detector pixels, of the square cutout extracted
         around each PSFlet centroid. Default 13.
@@ -535,20 +572,21 @@ def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, normalize=True):
     Returns
     -------
     hires_arr : numpy.ndarray
-        Array of shape (nsubarr, nsubarr, upsample * (npix + 1),
+        Array of shape (nsubarr_y, nsubarr_x, upsample * (npix + 1),
         upsample * (npix + 1)) holding one high-resolution PSFlet model
         per detector sub-region.
     """
+    nsubarr_x, nsubarr_y = _nsubarr_xy(nsubarr)
 
     ###################################################################
-    # hires_arr has nsubarr x nsubarr high-resolution PSFlets.  Smooth
+    # hires_arr has nsubarr_y x nsubarr_x high-resolution PSFlets.  Smooth
     # out the result very slightly to reduce the impact of poorly
     # sampled points.  The resolution on these images, which will be
     # passed to a multidimensional spline interpolator, is a factor of
     # upsample higher than the pixellation of the original image.
     ###################################################################
 
-    hires_arr = np.zeros((nsubarr, nsubarr, upsample *
+    hires_arr = np.zeros((nsubarr_y, nsubarr_x, upsample *
                           (npix + 1), upsample * (npix + 1)))
     _x = np.arange(3 * upsample) - (3 * upsample - 1) / 2.
     _x, _y = np.meshgrid(_x, _x)
@@ -557,26 +595,26 @@ def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, normalize=True):
 
     ###################################################################
     # yreg and xreg denote the regions of the image.  Each region will
-    # have roughly 20,000/nsubarr**2 PSFlets from which to construct
-    # the resampled version.  For 5x5 (default), this is roughly 800.
-    # TODO, this hardcoded "20,000" value might have worked for PISCES, but is now out of date. It should be replaced with a more general estimate or the language should be updated accordingly. 
+    # have roughly 20,000/(nsubarr_x*nsubarr_y) PSFlets from which to
+    # construct the resampled version.  For 5x5 (default), this is roughly 800.
+    # TODO, this hardcoded "20,000" value might have worked for PISCES, but is now out of date. It should be replaced with a more general estimate or the language should be updated accordingly. Upped it to 80,000 for now.
     ###################################################################
 
-    for yreg in range(nsubarr):
+    for yreg in range(nsubarr_y):
         # i1, i2: lower and upper detector-row bounds of this sub-region
         # along the y (vertical) axis. Clipped inward by npix so that a
         # full npix cutout around any included centroid stays on-detector.
-        i1 = yreg * image.data.shape[0] // nsubarr
-        i2 = i1 + image.data.shape[0] // nsubarr
+        i1 = yreg * image.data.shape[0] // nsubarr_y
+        i2 = i1 + image.data.shape[0] // nsubarr_y
         i1 = max(i1, npix)
         i2 = min(i2, image.data.shape[0] - npix)
 
-        for xreg in range(nsubarr):
+        for xreg in range(nsubarr_x):
             # j1, j2: lower and upper detector-column bounds of this
             # sub-region along the x (horizontal) axis, clipped inward by
             # npix for the same on-detector cutout guarantee as i1, i2.
-            j1 = xreg * image.data.shape[1] // nsubarr
-            j2 = j1 + image.data.shape[1] // nsubarr
+            j1 = xreg * image.data.shape[1] // nsubarr_x
+            j2 = j1 + image.data.shape[1] // nsubarr_x
             j1 = max(j1, npix)
             j2 = min(j2, image.data.shape[1] - npix)
 
@@ -584,11 +622,11 @@ def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, normalize=True):
             # subim holds the high-resolution images.  The first
             # dimension counts over PSFlet, and must hold roughly the
             # total number of PSFlets divided by upsample**2.  The
-            # worst possible case is about 20,000/nsubarr**2.
+            # worst possible case is about 80,000/(nsubarr_x*nsubarr_y).
             ############################################################
 
             k = 0
-            subim = np.zeros((int(20000 / nsubarr**2), upsample * (npix + 1), upsample * (npix + 1)))
+            subim = np.zeros((int(80000 / (nsubarr_x * nsubarr_y)), upsample * (npix + 1), upsample * (npix + 1)))
 
             ############################################################
             # Now put the PSFlets in.  The pixel of index
@@ -628,6 +666,7 @@ def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, normalize=True):
 
             for ii in range(3):
 
+                # TODO: What is the point of having both window1 and window2? They are identical. Is this a bug? Should they be different?
                 window1 = np.exp(-r2 / (2 * 1**2 * (upsample / 5.)**2))
                 window2 = np.exp(-r2 / (2 * 1**2 * (upsample / 5.)**2))
                 if ii < 2:
@@ -671,21 +710,13 @@ def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, normalize=True):
                             std = np.std(data) + 1e-10
                             mean = np.mean(data)
 
-                            subim[:k,
-                                  i,
-                                  j] *= np.abs(subim[:k,
-                                                     i,
-                                                     j] - mean) / std < 3.5
+                            subim[:k, i, j] *= np.abs(subim[:k, i, j] - mean) / std < 3.5
                         elif data.shape[0] > 5:
                             data = np.sort(data)[1:-1]
                             std = np.std(data) + 1e-10
                             mean = np.mean(data)
 
-                            subim[:k,
-                                  i,
-                                  j] *= np.abs(subim[:k,
-                                                     i,
-                                                     j] - mean) / std < 3.5
+                            subim[:k, i, j] *= np.abs(subim[:k, i, j] - mean) / std < 3.5
 
                         data = subim[:k, i, j][np.where(subim[:k, i, j] != 0)]
                         # data = np.sort(data)
@@ -694,15 +725,13 @@ def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, normalize=True):
                             meanpsf[i, j] = np.mean(data)
                             weight[i, j] = npts
 
-                meanpsf = signal.convolve2d(
-                    meanpsf * weight, window, mode='same')
+                meanpsf = signal.convolve2d(meanpsf * weight, window, mode='same')
                 meanpsf /= signal.convolve2d(weight, window, mode='same')
 
                 val = meanpsf.copy()
                 for jj in range(10):
                     tmp = val / signal.convolve2d(meanpsf, window, mode='same')
-                    meanpsf *= signal.convolve2d(tmp,
-                                                 window[::-1, ::-1], mode='same')
+                    meanpsf *= signal.convolve2d(tmp, window[::-1, ::-1], mode='same')
 
             ############################################################
             # Normalize all PSFs to unit flux when resampled with an
@@ -749,8 +778,96 @@ def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, normalize=True):
 #             hires_arr[yreg,xreg] = epsflets(subim,upsample,npix)
 #             if normalize:
 #                 hires_arr[yreg,xreg] *= upsample**2 / np.sum(hires_arr[yreg,xreg])
-# 
+#
 #     return hires_arr
+
+
+def plot_hires_psflet_mosaic(hires_array, lam, outdir, nsubarr, detector_shape):
+    '''
+    Render an nsubarr_x x nsubarr_y mosaic of high-resolution PSFlet models laid
+    out on a single axes that spans the full detector, so each PSFlet sits inside
+    the detector sub-region it was built from.
+
+    Every PSFlet is drawn square (native aspect preserved) and centered in its
+    region cell, using one shared log-scaled viridis color mapping and a single
+    colorbar. The figure is displayed non-blocking, saved to
+    'hires_psflets_lam<nm>_snapshot.png' in outdir at 300 dpi, and then closed.
+
+    Parameters
+    ----------
+    hires_array : numpy.ndarray
+        High-resolution PSFlet models for one wavelength, shape
+        (nsubarr_y, nsubarr_x, H, W), indexed [yreg, xreg]. Produced by
+        gethires / get_sim_hires.
+    lam : float
+        Wavelength (nm) of this model set; used for the title and filename.
+    outdir : str
+        Directory in which to save the PNG.
+    nsubarr : int or [nx, ny]
+        Number of detector sub-regions. A scalar gives a square nsubarr x
+        nsubarr grid; a 2-element [nx, ny] gives the number of regions along
+        the x- and y-axis respectively (for rectangular detectors).
+    detector_shape : tuple of int
+        Detector (ny, nx) in pixels, used to set the axes extent and region
+        boundaries so the mosaic maps onto true detector coordinates.
+    '''
+    nsubarr_x, nsubarr_y = _nsubarr_xy(nsubarr)
+    ny, nx = detector_shape
+
+    # Shared log color mapping across all PSFlets. vmax is halved so the
+    # brightest cores sit near (not at) the top of the color range.
+    global_max = np.nanmax(hires_array)
+    if not np.isfinite(global_max) or global_max <= 0:
+        log.warning('Skipping PSFlet mosaic for %d nm: no positive data to log-scale' % lam)
+        return
+    vmax = global_max / 2.
+    vmin = np.nanpercentile(hires_array,50) # vmax / 1e3
+    norm = LogNorm(vmin=vmin, vmax=vmax)
+
+    # Region boundaries as an even division of the detector, matching gethires.
+    x_edges = np.linspace(0, nx, nsubarr_x + 1)
+    y_edges = np.linspace(0, ny, nsubarr_y + 1)
+    cell_w = nx / float(nsubarr_x)
+    cell_h = ny / float(nsubarr_y)
+    side = 0.95 * min(cell_w, cell_h)
+
+    # Size the figure to the detector aspect ratio.
+    fig_w = 10
+    fig, ax = plt.subplots(figsize=(fig_w, fig_w * ny / float(nx)))
+    ax.set_aspect('equal')
+
+    im = None
+    for yreg in range(nsubarr_y):
+        cy = 0.5 * (y_edges[yreg] + y_edges[yreg + 1])
+        for xreg in range(nsubarr_x):
+            cx = 0.5 * (x_edges[xreg] + x_edges[xreg + 1])
+            extent = [cx - side / 2., cx + side / 2.,
+                      cy - side / 2., cy + side / 2.]
+            im = ax.imshow(hires_array[yreg, xreg], origin='lower',
+                           cmap='viridis', norm=norm, extent=extent)
+
+    # Grid lines separating the nsubarr_x x nsubarr_y detector regions.
+    for xe in x_edges:
+        ax.axvline(xe, color='black', alpha=0.3)
+    for ye in y_edges:
+        ax.axhline(ye, color='black', alpha=0.3)
+
+    ax.set_xlim(0, nx)
+    ax.set_ylim(0, ny)
+    ax.set_xticks(x_edges)
+    ax.set_yticks(y_edges)
+    ax.set_xlabel('Detector X (pixels)')
+    ax.set_ylabel('Detector Y (pixels)')
+    ax.set_title('High-res PSFlet mosaic — %d nm' % lam)
+
+    fig.colorbar(im, ax=ax, label='Normalized flux (log scale)')
+    fig.tight_layout()
+
+    plt.show(block=False)
+    plt.pause(0.1)
+    fig.savefig(os.path.join(outdir, 'hires_psflets_lam%d_snapshot.png' % lam),
+                dpi=300, bbox_inches='tight')
+    plt.close(fig)
 
 
 def makeHires(
@@ -764,7 +881,7 @@ def makeHires(
         parallel=True,
         savehiresimages=True,
         upsample=5,
-        nsubarr=5, #TODO, make it optional for this argument to be a 2-element list. In the case of a rectangular detector, the number of subarrays in x and y may be different.
+        nsubarr=[5, 5],  # scalar -> square grid; [nx, ny] -> rectangular (per-axis region counts)
         npix=13,
         finexy=None,
         reflam=None):
@@ -780,9 +897,10 @@ def makeHires(
        c. If using Gaussian simulation:
           - Generate idealized Gaussian PSFLet models
 
-    2. The detector is divided into nsubarr x nsubarr regions, and a separate
-       high-resolution PSFLet model is created for each region to account for
-       spatial variations across the detector.
+    2. The detector is divided into a grid of regions (nsubarr_x along the
+       x-axis by nsubarr_y along the y-axis), and a separate high-resolution
+       PSFLet model is created for each region to account for spatial
+       variations across the detector.
 
     3. The resulting high-resolution PSFLet models have a spatial sampling 'upsample'
        times higher than the original detector pixels.
@@ -826,10 +944,11 @@ def makeHires(
     upsample : int
         Oversampling factor of the high-resolution models relative to the
         native detector pixellation. Default 5.
-    nsubarr : int
-        Number of detector sub-regions per axis (nsubarr x nsubarr total)
-        used to track spatial variation of the PSF across the field.
-        Default 5.
+    nsubarr : int or [nx, ny]
+        Number of detector sub-regions used to track spatial variation of
+        the PSF across the field. A scalar gives a square nsubarr x nsubarr
+        grid; a 2-element [nx, ny] gives the number of regions along the x-
+        and y-axis respectively (for rectangular detectors). Default [5, 5].
     npix : int
         Size, in native detector pixels, of the square cutout extracted
         around each PSFlet centroid. Default 13.
@@ -891,9 +1010,12 @@ def makeHires(
 
                 if savehiresimages:
                     out = fits.HDUList(fits.PrimaryHDU(high_res_array.astype(np.float32)))
-                    out.writeto(
-                        os.path.join(par.wavecalDir, 'hires_psflets_lam%d.fits' % (lam[i])),
+                    out.writeto(os.path.join(par.wavecalDir, 'hires_psflets_lam%d.fits' % (lam[i])),
                         overwrite=True)
+
+                    outdir = getattr(par, 'outdir', None) or par.wavecalDir
+                    detector_shape = imlist[i].data.shape if imlist is not None else (par.npix, par.npix)
+                    plot_hires_psflet_mosaic(high_res_array, lam[i], outdir, nsubarr, detector_shape)
     else:
         log.info('No parallel computation')
         for i in range(len(lam)):
@@ -929,6 +1051,10 @@ def makeHires(
                 #         outim[ii * dj:(ii + 1) * dj, jj * dj:(jj + 1) * dj] = high_res_array[ii, jj]
                 out = fits.HDUList(fits.PrimaryHDU(high_res_array.astype(np.float32)))
                 out.writeto(os.path.join(par.wavecalDir, 'hires_psflets_lam%d.fits' % (lam[i])), overwrite=True)
+
+                outdir = getattr(par, 'outdir', None) or par.wavecalDir
+                detector_shape = imlist[i].data.shape if imlist is not None else (par.npix, par.npix)
+                plot_hires_psflet_mosaic(high_res_array, lam[i], outdir, nsubarr, detector_shape)
 
     return hires_arrs
 
@@ -1152,9 +1278,9 @@ def buildcalibrations(
         savehiresimages=True,
         borderpix=4,
         upsample=5,
-        nsubarr=3,
+        nsubarr=[5, 5],
         npix=13,
-        parallel=False,
+        parallel=True,
         inspect_first=True,
         apodize=False,
         lamsol=None,
@@ -1225,16 +1351,19 @@ def buildcalibrations(
             Number of pixels that are not taken into account towards the edges of the detector
     upsample: int
             Upsampling factor for each high-resolution PSFLet
-    nsubarr: int
-            Detector will be divided into nsubarr x nsubarr regions. A high-resolution PSFLet
-            will be determined in each region from the average of all PSFLets within that
-            region
+    nsubarr: int or [nx, ny]
+            Number of detector sub-regions. A scalar N divides the detector into an N x N
+            (square) grid; a 2-element [nx, ny] gives the number of regions along the x- and
+            y-axis respectively, which is useful for rectangular detectors. A high-resolution
+            PSFLet will be determined in each region from the average of all PSFLets within
+            that region. Default [5, 5].
     parallel: Boolean
-            NOTE: No longer beneficial after branch made on 7/24/2026, where the make_polychrome() math 
-                was improved such that single-threaded computation is now faster by ~2x. 
-            Whether or not to parallelize the computation for the high-resolution PSFLet and
-            polychrome computation. The wavelength calibration step cannot be parallelized since
-            each wavelength uses the previous wavelength solution as a guess input.
+            Whether or not to parallelize the computation for high-resolution PSFLet computation.
+            NOTE: The make_polychrome() computation will ALWAYS use parallel=False regardless of
+            this setting, since parallelization has been found to worsen (not improve) its performance.
+            A warning will be logged if parallel=True is requested while makePolychrome=True.
+            The wavelength calibration step cannot be parallelized since each wavelength uses the
+            previous wavelength solution as a guess input.
     apodize: Boolean
             Whether to fit the spots only using lenslets within a circle, ignoring the corners of
             the detector
@@ -1663,18 +1792,24 @@ def buildcalibrations(
 
         # Create an array of wavelengths that represent the midpoints/endpoints of the wavelength bins
         lam_midpts, lam_endpts = calculateWaveList(par, lam, method='lstsq')
-        # TODO, rename all instances of 'num_wavelengths' to 'num_wavelengths' for clarity. 
+        # TODO, rename all instances of 'num_wavelengths' to 'num_wavelengths' for clarity.
         num_wavelengths = len(lam_endpts)  # The number of unique wavelength bins
         polyimage = np.zeros((num_wavelengths - 1, ysize, xsize))
 
-        # Initialize some arrays where we will store information about the x/y position of each PSF, 
+        # Initialize some arrays where we will store information about the x/y position of each PSF,
         # as well as whether or not that PSF is "good" (i.e. falls on the detector)
         xpos = []
         ypos = []
         good = []
 
         log.info('Making polychrome cube')
-        if not parallel:
+        # Force parallel=False for make_polychrome since it has been found to worsen performance
+        parallel_make_polychrome = parallel
+        if parallel_make_polychrome:
+            log.warning("WARNING: parallel=True was requested, but make_polychrome will still use parallel=False "
+                       "since parallelization has been found to worsen performance (not improve it).")
+            parallel_make_polychrome = False
+        if not parallel_make_polychrome:
             for i in range(num_wavelengths - 1):
                 log.info(f'  Wavelength bin {i + 1} of {num_wavelengths - 1}')
                 polyimage[i] = (lam_endpts[i + 1] - lam_endpts[i]) * make_polychrome(lam_endpts[i],
