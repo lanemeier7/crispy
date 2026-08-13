@@ -61,7 +61,7 @@ def gen_lenslet_flat(BBcube, nsig=5):
 
     fullave = np.mean(lenslet_flat[mask])
     norm_lenslet_flat = lenslet_flat / fullave
-    norm_lenslet_flat[norm_lenslet_flat == 0] = np.NaN
+    norm_lenslet_flat[norm_lenslet_flat == 0] = np.nan
 
     return 1. / norm_lenslet_flat, mask
 

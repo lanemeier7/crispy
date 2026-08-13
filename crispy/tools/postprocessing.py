@@ -511,8 +511,8 @@ def process_SPC_IFS(par,
         #         target_cube_stack = np.sum(target_cube.data,axis=0)
         #         ratio = np.sum(target_star_cube[:,0,0]) / np.sum(ref_star_cube[:,0,0])
         #         residual = target_cube.data - ratio*ref_cube.data
-        #         residual[np.isnan(target_cube.data)] = np.NaN
-        #         residual[(residual>1e10)*(residual<-1e10)] = np.NaN
+        #         residual[np.isnan(target_cube.data)] = np.nan
+        #         residual[(residual>1e10)*(residual<-1e10)] = np.nan
 
         # NEED TO subtract the mean of the cube slice by slice before the lstsq
         # step
@@ -541,7 +541,7 @@ def process_SPC_IFS(par,
 
     flatfield = Image(par.exportDir + '/flatfield_red_optext.fits')
     residual[~np.isnan(residual)] /= flatfield.data[~np.isnan(residual)]
-    residual[np.logical_or((residual > 1e10), (residual < -1e10))] = np.NaN
+    residual[np.logical_or((residual > 1e10), (residual < -1e10))] = np.nan
     par.hdr.append(('comment', 'Divided by lenslet flatfield'), end=True)
     Image(
         data=residual,

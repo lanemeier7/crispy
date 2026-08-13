@@ -860,7 +860,7 @@ def plot_hires_psflet_mosaic(hires_array, lam, outdir, nsubarr, detector_shape):
     ax.set_ylabel('Detector Y (pixels)')
     ax.set_title('High-res PSFlet mosaic — %d nm' % lam)
 
-    fig.colorbar(im, ax=ax, label='Normalized flux (log scale)')
+    fig.colorbar(im, ax=ax, label='Normalized flux')
     fig.tight_layout()
 
     plt.show(block=False)

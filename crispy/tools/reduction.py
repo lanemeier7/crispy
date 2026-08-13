@@ -125,7 +125,7 @@ def testReduction(par, name, ifsimage):
                 if good[j + i * nlens]:
                     cube[iwav, j, i] = table[j + i * nlens]
                 else:
-                    cube[iwav, j, i] = np.NaN
+                    cube[iwav, j, i] = np.nan
 
     fits.PrimaryHDU(cube).writeto(name + '.fits', overwrite=True)
     return cube
@@ -419,9 +419,9 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
 #                     resid[y0:y1,x0:x1] -= modelij
                 except Exception:
                     log.error('Fitting error at lenslet {:}'.format((i, j)))
-                    cube[:, j, i] = np.NaN
+                    cube[:, j, i] = np.nan
                     ivarcube[:, j, i] = 0.
-                    chisq[j, i] = np.NaN
+                    chisq[j, i] = np.nan
                     
                 # Create a multi-figure plot showing the subimage, and the slices of the psflet array that were used to create the model.
                 # This is useful for visually inspecting the fit quality and the contribution of each PSFlet.
@@ -457,9 +457,9 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                         plt.close('all')
                     
             else:
-                cube[:, j, i] = np.NaN
+                cube[:, j, i] = np.nan
                 ivarcube[:, j, i] = 0.
-                chisq[j, i] = np.NaN
+                chisq[j, i] = np.nan
     
     # Show map of chisq values
     if show_fit_plots:
@@ -1216,9 +1216,9 @@ def fitspec_intpix(par, im, PSFlet_tool, lamlist, delt_y=6, flat=None,
 #                     func = interp1d(lams,pix_center_vals,kind='linear')
 #                     cube[:,j,i] = func(lamlist)
                 else:
-                    cube[:, j, i] = np.NaN
+                    cube[:, j, i] = np.nan
             else:
-                cube[:, j, i] = np.NaN
+                cube[:, j, i] = np.nan
 #
 #     if flat is not None:
 #         datacube.data /= flat + 1e-10
@@ -1375,10 +1375,10 @@ def fitspec_intpix_np(
                         k=3)
                     ivarcube[:, j, i] = interpolate.splev(lamlist, tck, ext=1)
                 else:
-                    cube[:, j, i] = np.NaN
+                    cube[:, j, i] = np.nan
                     ivarcube[:, j, i] = 0.
             else:
-                cube[:, j, i] = np.NaN
+                cube[:, j, i] = np.nan
                 ivarcube[:, j, i] = 0.
 
     if 'cubemode' not in par.hdr:
