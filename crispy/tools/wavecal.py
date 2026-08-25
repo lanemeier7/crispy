@@ -77,6 +77,9 @@ def do_inspection(par, image, xpos, ypos, lam, display_plot=False):
     patches = [plt.Circle(val, 3) for val in vals]
     collection = PatchCollection(patches, color='blue', lw=0.7, alpha=0.5)
     ax.add_collection(collection)
+    ax.set_xlabel('X Pixel Position')
+    ax.set_ylabel('Y Pixel Position')
+    ax.set_title(f'PSFlet Positions at {lam:.2f} nm')
     fig.savefig(os.path.join(par.outdir, 'inspection_%3d.png' % (lam)), dpi=600)
 
     if display_plot:
@@ -91,17 +94,69 @@ def make_polychrome(lam1, lam2, hires_arrs, lam_arr, psftool, allcoef,
                     prefiltered=False,
                     ):
     """
-    TODO, make a numpy-style docstring. Include some details about how "the polychrome" image is made.
+    Build a polychromatic PSFlet model for a finite-width wavelength bin.
 
-    prefiltered: bool
+    A polychrome is the instrument response to a top-hat spectrum across a
+    wavelength bin [lam1, lam2]. It is constructed by:
+
+    1. Sampling the bin into `nlam` log-spaced sub-wavelengths
+    2. Linearly interpolating the monochromatic hires_psflets at each sub-wavelength
+    3. Placing and summing the interpolated PSFlets at each lenslet centroid (which
+       varies with wavelength via the dispersion solution)
+
+    The net effect is an integration of the monochromatic PSF model over the bin,
+    yielding the response to a finite-width spectrum. The hires_psflets themselves
+    represent the single-wavelength (delta-function-in-wavelength) PSF response at
+    calibration wavelengths; finite spectral width is introduced here by the bin
+    integration, not by convolution with a separate instrument response.
+
+    Parameters
+    ----------
+    lam1 : float
+        Lower wavelength edge of the bin (nm).
+    lam2 : float
+        Upper wavelength edge of the bin (nm).
+    hires_arrs : list of ndarray
+        List of high-resolution monochromatic PSFlet models, one per calibration wavelength.
+        Each element has shape (nlenslets_x, nlenslets_y, npix*upsample, npix*upsample).
+    lam_arr : ndarray
+        Calibration wavelengths (nm) corresponding to entries in hires_arrs.
+    psftool : PSFLets instance
+        Tool for computing lenslet centroid positions as a function of wavelength via the
+        dispersion solution.
+    allcoef : ndarray
+        Polynomial coefficients for the dispersion solution (lenslet centroids vs wavelength).
+    xindx, yindx : ndarray
+        Lenslet array indices (x and y coordinates on the lenslet grid).
+    ydim, xdim : int
+        Detector frame dimensions (height, width in pixels).
+    finexy : tuple of ndarray, optional
+        Fine-calibration offsets (dx, dy) to apply to lenslet centroids. Default None.
+    reflam : float, optional
+        Reference wavelength for fine-calibration. Default None (unused if finexy is None).
+    upsample : int, optional
+        Spatial upsampling factor of the hires_psflets (e.g., if hires_psflets are sampled
+        at 10x the detector pixel scale, upsample=10). Default 10.
+    nlam : int, optional
+        Number of log-spaced sub-wavelengths to sample within the bin. Higher values give
+        finer wavelength resolution at the cost of more computation. Default 10.
+    prefiltered : bool, optional
         If True, hires_arrs is assumed to have already been passed through
-        ndimage.spline_filter (once, ahead of time, e.g. in buildcalibrations), so the
-        in-loop spline_filter call below is skipped. Since spline_filter is linear and
-        commutes with the affine interpolation between calibration wavelengths performed
-        below, this is mathematically equivalent to filtering the interpolated array on
-        every sub-wavelength, but avoids redundant repeated filtering of the same
-        calibration arrays across sub-wavelengths and wavelength bins. Default False
-        (preserves original behavior).
+        ndimage.spline_filter (once, ahead of time, e.g. in buildcalibrations). The
+        in-loop spline_filter call is then skipped. Since spline_filter is linear and
+        commutes with the affine interpolation between calibration wavelengths, this
+        is mathematically equivalent to filtering the interpolated array on every
+        sub-wavelength, but avoids redundant repeated filtering of the same calibration
+        arrays across sub-wavelengths and bins. Default False, but get set to True in buildcalibrations when prefiltering is done ahead of time.
+
+    Returns
+    -------
+    image : ndarray
+        2D array (shape ydim x xdim) representing the polychromatic PSFlet map at each
+        lenslet centroid for the bin [lam1, lam2]. This is the integrated response to a
+        flat spectrum across the bin. Before being stored in the final polychrome cube,
+        this should be multiplied by (lam2 - lam1) to convert from an average to an
+        integral (see buildcalibrations, lines 1827, 1875).
     """
 
     padding = 10
@@ -725,13 +780,20 @@ def gethires(x, y, good, image, upsample=5, nsubarr=[5, 5], npix=13, normalize=T
                             meanpsf[i, j] = np.mean(data)
                             weight[i, j] = npts
 
-                meanpsf = signal.convolve2d(meanpsf * weight, window, mode='same')
-                meanpsf /= signal.convolve2d(weight, window, mode='same')
+                # Only perform the next step if there were >0 PSFlets in this region
+                if np.sum(weight) > 0 and np.sum(meanpsf) > 0:
+                    meanpsf = signal.convolve2d(meanpsf * weight, window, mode='same')
+                    meanpsf /= signal.convolve2d(weight, window, mode='same')
 
-                val = meanpsf.copy()
-                for jj in range(10):
-                    tmp = val / signal.convolve2d(meanpsf, window, mode='same')
-                    meanpsf *= signal.convolve2d(tmp, window[::-1, ::-1], mode='same')
+                    val = meanpsf.copy()
+                    for jj in range(10):
+                        tmp = val / signal.convolve2d(meanpsf, window, mode='same')
+                        meanpsf *= signal.convolve2d(tmp, window[::-1, ::-1], mode='same')
+                        
+                        # TEMPORARY for troubleshooting
+                        if np.isnan(meanpsf).any():
+                            log.warning('NaN values found in high-resolution PSFlet for region ({:d}, {:d})'.format(yreg, xreg))
+
 
             ############################################################
             # Normalize all PSFs to unit flux when resampled with an
@@ -743,11 +805,12 @@ def gethires(x, y, good, image, upsample=5, nsubarr=[5, 5], npix=13, normalize=T
             # the window gather zero PSFlets, so meanpsf sums to 0 and normalizing would produce
             # NaN/inf. Leave those regions all-zero; they are never sampled by a "good" lenslet
             # (genpixsol already excludes out-of-window lenslets), so zero is correct.
+            
             psfsum = np.sum(meanpsf)
             if normalize and psfsum != 0:
                 meanpsf *= upsample**2 / psfsum
             hires_arr[yreg, xreg] = meanpsf
-
+            
     return hires_arr
 
 # def gethires(x, y, good, image, upsample=5, nsubarr=5, npix=13, normalize=True):
@@ -1321,6 +1384,7 @@ def buildcalibrations(
             use the files in par.lamlist
     order: int
             Order of the polynomial used to fit the PSFLet positions across the detector
+            For PISCES/DST2 IFS, order=3 is recommended. 4 is not noticeably better and 2 is substantially worse. 
     genwavelengthsol: Boolean
             If True, generate the wavelength calibration. Creates a text file with all
             polynomial coefficients that best fit the PSFLet positions at each wavelength.

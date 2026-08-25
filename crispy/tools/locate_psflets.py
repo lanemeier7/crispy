@@ -908,7 +908,7 @@ def optimize_coef_from_image(unfiltered, coef, lenslet_ind_x, lenslet_ind_y,
         bounds = [(None, None)] * len(coef)
         bounds[x0_term] = (coef[x0_term] - scale, coef[x0_term] + scale)
         bounds[y0_term] = (coef[y0_term] - scale, coef[y0_term] + scale)
-        log.info(f'Fitting coefficients for the central {frac}/1.0 of the image')
+        log.info(f'Fitting coefficients for the central {frac*100:.0f}% of the image')
         # Temporary, delete me if still commented out. I was experimenting with using L-BFGS-B fitting instead of Powell.
         # res = optimize.minimize(corrval, coef, args=(lenslet_ind_x_sub, lenslet_ind_y_sub,
         #                         cropped_image, polyorder, trimfrac, False, False),
