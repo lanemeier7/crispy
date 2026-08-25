@@ -646,7 +646,12 @@ def gethires(x, y, good, image, upsample=5, nsubarr=[5, 5], npix=13, normalize=T
     _x = np.arange(3 * upsample) - (3 * upsample - 1) / 2.
     _x, _y = np.meshgrid(_x, _x)
     r2 = _x**2 + _y**2
-    window = np.exp(-r2 / (2 * 0.3**2 * (upsample / 5.)**2))
+
+    # Narrow Gaussian kernel, sigma = 1 upsampled pixel (scaled so it tracks the
+    # oversampling factor). It serves two roles below: lightly smoothing the
+    # stacked PSFlet to suppress poorly-sampled points, and acting as the kernel
+    # for the Richardson-Lucy deconvolution that sharpens the smoothed model back.
+    window = np.exp(-r2 / (2 * 1**2 * (upsample / 5.)**2))
 
     ###################################################################
     # yreg and xreg denote the regions of the image.  Each region will
@@ -720,14 +725,6 @@ def gethires(x, y, good, image, upsample=5, nsubarr=[5, 5], npix=13, normalize=T
             ############################################################
 
             for ii in range(3):
-
-                # TODO: What is the point of having both window1 and window2? They are identical. Is this a bug? Should they be different?
-                window1 = np.exp(-r2 / (2 * 1**2 * (upsample / 5.)**2))
-                window2 = np.exp(-r2 / (2 * 1**2 * (upsample / 5.)**2))
-                if ii < 2:
-                    window = window2
-                else:
-                    window = window1
 
                 if ii > 0:
                     for kk in range(k):
