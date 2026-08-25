@@ -723,7 +723,7 @@ def visualize_IFS_cube(cube_data, lam_midpts=None, scale='linear'):
     if scale not in ('linear', 'log'):
         raise ValueError(f"Unsupported scale: {scale}")
 
-    n_slices = len(lam_midpts)
+    n_slices = cube_data.shape[0] if lam_midpts is None else len(lam_midpts)
     initial_slice = 0
 
     fig, ax = plt.subplots(figsize=(8, 7))
