@@ -74,8 +74,8 @@ def do_inspection(par, image, xpos, ypos, lam, display_plot=False):
     std = np.std(image)
     norm = mpl.colors.Normalize(vmin=mean, vmax=mean + 5 * std)
     ax.imshow(image, cmap='gray_r', norm=norm, interpolation='nearest', origin='lower')
-    patches = [plt.Circle(val, 3) for val in vals]
-    collection = PatchCollection(patches, color='blue', lw=0.7, alpha=0.5)
+    patches = [plt.Circle(val, 5) for val in vals]
+    collection = PatchCollection(patches, color='blue', lw=0.0, alpha=0.5)
     ax.add_collection(collection)
     ax.set_xlabel('X Pixel Position')
     ax.set_ylabel('Y Pixel Position')
