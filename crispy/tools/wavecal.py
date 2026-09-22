@@ -1323,6 +1323,14 @@ def evaluate_dispersion_solution_fit_quality(image_data, x_calc, y_calc,
         fig.savefig(filename, dpi=300, bbox_inches='tight')
         log.info(f'Saved fit-quality diagnostic to {filename}')
 
+        # ===== TEMPORARY: remove when psflet-position modeling effort is done, but keep for posterity =====
+        # Export the underlying per-peak (x, y, fit_error) data to a CSV, in pixel units, to support
+        # ongoing work on improved models of PSFlet position derived from the dispersion polynomial.
+        csv_filename = os.path.join(output_directory, f'fit_quality{suffix}.csv')
+        pd.DataFrame({'x': x_peak, 'y': y_peak, 'fit_error': distances}).to_csv(csv_filename, index=False)
+        log.info(f'Saved fit-quality data table to {csv_filename}')
+        # ===== END TEMPORARY =====
+
 
 def buildcalibrations(
         par,
