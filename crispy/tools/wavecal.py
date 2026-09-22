@@ -893,7 +893,7 @@ def plot_hires_psflet_mosaic(hires_array, lam, outdir, nsubarr, detector_shape):
 
     # Size the figure to the detector aspect ratio.
     fig_w = 10
-    fig, ax = plt.subplots(figsize=(fig_w, fig_w * ny / float(nx)))
+    fig, ax = plt.subplots(figsize=(fig_w, fig_w * ny / float(nx)-0.5))
     ax.set_aspect('equal')
 
     im = None
