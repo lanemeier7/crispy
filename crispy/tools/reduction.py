@@ -935,14 +935,18 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=Fal
         guess = np.ones(N) * np.sum(subim_flat) / float(N)
         model_variance = np.reshape(
             np.sum(psflets * guess[:, np.newaxis, np.newaxis], axis=0) + pixnoise, -1)
-        Ninv = np.diag(1. / (model_variance + 1e-10))
-        inverse_covariance = np.dot(A.T, np.dot(Ninv, A))
+        # Ninv used to be materialized as a dense n_pixels x n_pixels diagonal matrix
+        # (np.diag(1./(model_variance + 1e-10))) and multiplied via np.dot(Ninv, A); since
+        # Ninv is purely diagonal, this is replaced with a 1D array + broadcasting, which is
+        # algebraically identical but avoids the O(n_pixels^2) dense matmul.
+        Ninv_diag = 1. / (model_variance + 1e-10)
+        inverse_covariance = np.dot(A.T, Ninv_diag[:, np.newaxis] * A)
         _accumulate(timing, 'weighted_matrix_build', t0)
         t0 = time.perf_counter()
         covariance = np.linalg.inv(inverse_covariance)
         _accumulate(timing, 'inv', t0)
         t0 = time.perf_counter()
-        right_hand_side = np.dot(A.T, np.dot(Ninv, subim_flat))
+        right_hand_side = np.dot(A.T, Ninv_diag * subim_flat)
         f = np.dot(covariance, right_hand_side)
         coef = np.dot(R, f)
         icov = 1. / np.diag(np.dot(R, np.dot(covariance, R.T)))
@@ -962,6 +966,10 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=Fal
             t0 = time.perf_counter()
             model_variance = np.reshape(
                 np.sum(psflets * guess[:, np.newaxis, np.newaxis], axis=0) + pixnoise, -1)
+            # The 'lstsq' branch above replaced this dense-diagonal Ninv with a 1D array +
+            # broadcasting for a measured speedup; not done here since reduceIFSMap(method=
+            # 'lstsq') never reaches this branch, but the same optimization would apply if
+            # 'lstsq_conv' is ever exercised/benchmarked.
             Ninv = np.diag(1. / (model_variance + 1e-10))
             inverse_covariance = np.dot(A.T, np.dot(Ninv, A))
             _accumulate(timing, 'weighted_matrix_build', t0)
@@ -998,6 +1006,9 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=Fal
         rl = RL(subim, psflets=psflets, niter=niter, prior=pixnoise)[0]
         model_variance = np.reshape(
             np.sum(psflets * rl[:, np.newaxis, np.newaxis], axis=0) + pixnoise, -1)
+        # Same dense-diagonal Ninv pattern optimized away in the 'lstsq' branch above; not
+        # done here since reduceIFSMap(method='lstsq') never reaches this branch, but the
+        # same optimization would apply if 'RL_conv' is ever exercised/benchmarked.
         Ninv = np.diag(1. / (model_variance + 1e-10))
         inverse_covariance = np.dot(A.T, np.dot(Ninv, A))
         covariance = np.linalg.inv(inverse_covariance)
