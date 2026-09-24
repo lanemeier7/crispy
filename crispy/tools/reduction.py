@@ -203,7 +203,8 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                  hires=False, upsample=3, fitbkgnd=False,
                  specialPolychrome=None, returnall=False, mode='lstsq',
                  niter=10, pixnoise=0.0, normpsflets=False, gain=1.0, show_fit_plots=False,
-                 lenslet_index_for_detailed_fit=None):
+                 lenslet_index_for_detailed_fit=None,
+                 data_cube_bandpass_nm=None, data_cube_ROI_side_length_lenslets=None):
     '''
     Least-squares extraction of an IFS data cube from a raw detector image.
 
@@ -292,7 +293,24 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
             If True, display a plot of the microspectrum and the largest PSFlet components for each lenslet during the fit.
     lenslet_index_for_detailed_fit: int or None, optional (default None)
             If provided, display a detailed fit plot for the specified lenslet index.
-    
+    data_cube_bandpass_nm: two-element list/tuple or None, optional (default None)
+            Optional speed-up that limits the wavelength range of the reduction by shrinking the
+            wavelength axis of the main reduction loops. Specify as ``[bandpass_desired_min,
+            bandpass_desired_max]`` in nanometers. The final cube's wavelength bins will not land
+            exactly on these values, but the resulting cube bandpass is guaranteed to encompass the
+            requested range. Both endpoints must fall within the wavelength-calibration bandpass
+            (the full lamsol sweep range) or a ValueError is raised. Intended for testing, where the
+            illuminated bandpass is often much narrower than the full wavecal sweep that otherwise
+            sets the (expensive) wavelength-bin count.
+    data_cube_ROI_side_length_lenslets: int or None, optional (default None)
+            Optional speed-up that limits the spatial extent of the reduction to a square region of
+            lenslets, centered on the center of the microlens array, by shrinking the lenslet grid
+            the main reduction loops iterate over. Specify as an integer number of lenslets per
+            side; e.g. 11 spans lenslet indices [-5, +5] in both directions about the MLA center.
+            The output cube keeps the full lenslet-array spatial dimensions (par.nlens x par.nlens);
+            lenslets outside the region of interest are set to NaN. Intended for testing, where the
+            user may only need to cover a smaller portion of the imaging space.
+
     Returns
     -------
     cube :  Image instance
@@ -335,6 +353,52 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
 
     # Central/edge wavelengths of each output bin; one more edge than there are bins.
     lam_midpts, lam_endpts = calculateWaveList(par, method='lstsq', num_wavelengths=psflets.shape[0] + 1)
+
+    # ------------------------------------------------------------------
+    # 1b. Optional bandpass limiting (speed-up). By default the wavelength grid spans the full
+    #     wavelength-calibration sweep, which sets the (expensive) number of wavelength bins N.
+    #     If the user supplies a narrower science bandpass, keep only the bins that overlap it,
+    #     shrinking N (and hence the polychrome cube, the per-lenslet fit, and the reconstruction).
+    #     Bin i corresponds to psflets[i]/xindx[i]/yindx[i]/good[i] and edges
+    #     [lam_endpts[i], lam_endpts[i+1]]; the arrays are index-aligned along axis 0, so slicing
+    #     them together keeps everything consistent and the downstream code sizes itself off
+    #     psflets.shape[0] automatically.
+    # ------------------------------------------------------------------
+    if data_cube_bandpass_nm is not None:
+        bandpass_desired_min, bandpass_desired_max = data_cube_bandpass_nm
+        if not bandpass_desired_min < bandpass_desired_max:
+            raise ValueError(
+                'data_cube_bandpass_nm must be [min, max] with min < max, got {!r}.'.format(
+                    data_cube_bandpass_nm))
+
+        # The calibration bandpass is the full range covered by the wavelength solution.
+        calibration_bandpass_min = lam_endpts[0]
+        calibration_bandpass_max = lam_endpts[-1]
+        if (bandpass_desired_min < calibration_bandpass_min
+                or bandpass_desired_max > calibration_bandpass_max):
+            raise ValueError(
+                'Requested data_cube_bandpass_nm [{}, {}] nm is not fully covered by the '
+                'wavelength-calibration bandpass [{:.2f}, {:.2f}] nm.'.format(
+                    bandpass_desired_min, bandpass_desired_max,
+                    calibration_bandpass_min, calibration_bandpass_max))
+
+        # Choose the smallest contiguous set of bins whose combined range encompasses the desired
+        # bandpass: the last edge at or below the desired minimum, through the first edge at or
+        # above the desired maximum. Bins bin_index_low .. bin_index_high-1 are kept.
+        bin_index_low = int(np.where(lam_endpts <= bandpass_desired_min)[0][-1])
+        bin_index_high = int(np.where(lam_endpts >= bandpass_desired_max)[0][0])
+
+        psflets = psflets[bin_index_low:bin_index_high]
+        xindx = xindx[bin_index_low:bin_index_high]
+        yindx = yindx[bin_index_low:bin_index_high]
+        good = good[bin_index_low:bin_index_high]
+        lam_midpts = lam_midpts[bin_index_low:bin_index_high]
+        lam_endpts = lam_endpts[bin_index_low:bin_index_high + 1]
+
+        log.info(
+            "User's desired bandpass is [{}, {}] nm. Actual cube bandpass will be "
+            "[{:.2f}, {:.2f}] nm".format(
+                bandpass_desired_min, bandpass_desired_max, lam_endpts[0], lam_endpts[-1]))
 
     # ------------------------------------------------------------------
     # 2. Optionally append a flat "background" component to the basis so the

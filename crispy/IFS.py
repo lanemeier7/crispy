@@ -270,7 +270,9 @@ def reduceIFSMap(
         pixnoise=None,
         medsub=True,
         normpsflets=False,
-        gain=0.5):
+        gain=0.5,
+        data_cube_bandpass_nm=None,
+        data_cube_ROI_side_length_lenslets=None):
     '''
     Main reduction function
 
@@ -329,6 +331,22 @@ def reduceIFSMap(
     gain: float, optional (default 0.5)
             Only used for the 'lstsq'-family methods. Detector gain (ADU/photoelectron), applied to convert raw
             detector units to photoelectrons before fitting (and converted back afterwards).
+    data_cube_bandpass_nm: two-element list/tuple or None, optional (default None)
+            Only used for the 'lstsq'-family methods. Optional speed-up that limits the wavelength range of the
+            reduction by shrinking the wavelength axis of the main reduction loops. Specify as
+            ``[bandpass_desired_min, bandpass_desired_max]`` in nanometers. The final cube's wavelength bins will
+            not land exactly on these values, but the resulting cube bandpass is guaranteed to encompass the
+            requested range. Both endpoints must fall within the wavelength-calibration bandpass (the full lamsol
+            sweep range) or a ValueError is raised. Intended for testing, where the illuminated bandpass is often
+            much narrower than the full wavecal sweep that otherwise sets the (expensive) wavelength-bin count.
+    data_cube_ROI_side_length_lenslets: int or None, optional (default None)
+            Only used for the 'lstsq'-family methods. Optional speed-up that limits the spatial extent of the
+            reduction to a square region of lenslets, centered on the center of the microlens array, by shrinking
+            the lenslet grid the main reduction loops iterate over. Specify as an integer number of lenslets per
+            side; e.g. 11 spans lenslet indices [-5, +5] in both directions about the MLA center. The output cube
+            keeps the full lenslet-array spatial dimensions (par.nlens x par.nlens); lenslets outside the region of
+            interest are set to NaN. Intended for testing, where the user may only need to cover a smaller portion
+            of the imaging space.
 
     Returns
     -------
@@ -380,6 +398,15 @@ def reduceIFSMap(
         pixnoise = std**2
     preprocessing_time = time.time() - preprocessing_start
 
+    # The scope-limiting speed-ups are only implemented for the 'lstsq'-family methods (the slow
+    # path these arguments were designed to accelerate). Fail loudly rather than silently ignoring
+    # them for 'optext'/'sum'.
+    if method not in ['lstsq', 'lstsq_conv', 'RL', 'RL_conv']:
+        if data_cube_bandpass_nm is not None or data_cube_ROI_side_length_lenslets is not None:
+            raise ValueError(
+                "data_cube_bandpass_nm and data_cube_ROI_side_length_lenslets are only supported "
+                "for the 'lstsq'-family methods, not method={!r}.".format(method))
+
     if method in ['lstsq', 'lstsq_conv', 'RL', 'RL_conv']:
         log.info("Using least-squares extraction method")
         reducedName += '_red_' + method
@@ -399,7 +426,9 @@ def reduceIFSMap(
             normpsflets=normpsflets,
             gain=gain,
             show_fit_plots=True,
-            lenslet_index_for_detailed_fit=None)
+            lenslet_index_for_detailed_fit=None,
+            data_cube_bandpass_nm=data_cube_bandpass_nm,
+            data_cube_ROI_side_length_lenslets=data_cube_ROI_side_length_lenslets)
     elif method == 'optext':
         log.info("Using optimal extraction method")
         reducedName += '_red_optext'
