@@ -437,9 +437,37 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     else:
         ifsimage.ivar = None
 
-    cube = np.zeros((psflets.shape[0], par.nlens, par.nlens))       # extracted flux (lam, y, x)
-    ivarcube = np.zeros((psflets.shape[0], par.nlens, par.nlens))   # matching inverse variance
-    chisq = np.zeros((par.nlens, par.nlens))                        # per-lenslet goodness of fit
+    # Optional region-of-interest limiting (speed-up). By default the fit loops below iterate the
+    # full par.nlens x par.nlens lenslet grid. If the user supplies a square ROI side length, only
+    # the centered block of lenslets is fit; the rest of the (full-size) output cube is left NaN.
+    # The MLA center is at array index par.nlens // 2 (the grid is built as
+    # np.arange(-nlens//2, nlens//2)+1 in locate_psflets.py), so a side length L spans lenslet
+    # indices [center - (L-1)//2, center + L//2] (exactly symmetric for odd L, e.g. 41 -> +/-20).
+    if data_cube_ROI_side_length_lenslets is not None:
+        side_len_lenslets = int(data_cube_ROI_side_length_lenslets)
+        if not 1 <= side_len_lenslets <= par.nlens:
+            raise ValueError(
+                'data_cube_ROI_side_length_lenslets must be between 1 and par.nlens ({}), '
+                'got {}.'.format(par.nlens, side_len_lenslets))
+        lenslet_center = par.nlens // 2
+        roi_index_low = lenslet_center - (side_len_lenslets - 1) // 2
+        roi_index_high = lenslet_center + side_len_lenslets // 2  # inclusive
+        roi_mask = np.zeros((par.nlens, par.nlens), dtype=bool)
+        roi_mask[roi_index_low:roi_index_high + 1, roi_index_low:roi_index_high + 1] = True
+        log.info(
+            'Limiting reduction to a {0}x{0}-lenslet ROI centered on the MLA: lenslet indices '
+            '[{1}, {2}] in both axes'.format(side_len_lenslets, roi_index_low, roi_index_high))
+    else:
+        roi_index_low = 0
+        roi_index_high = par.nlens - 1
+        roi_mask = None
+
+    # Allocate flux/chisq as NaN (not zeros) so any lenslet the fit loops never visit -- e.g. those
+    # outside an ROI -- reads back as NaN rather than a spurious 0. (For a full-grid run every cell
+    # is written anyway, so this changes nothing there.) Inverse variance stays 0 (== masked).
+    cube = np.full((psflets.shape[0], par.nlens, par.nlens), np.nan)  # extracted flux (lam, y, x)
+    ivarcube = np.zeros((psflets.shape[0], par.nlens, par.nlens))     # matching inverse variance
+    chisq = np.full((par.nlens, par.nlens), np.nan)                   # per-lenslet goodness of fit
 
     # Apply detector gain (ADU -> photoelectrons) up front. 'model' accumulates
     # the reconstructed detector image; 'resid' starts as the data and has each
@@ -472,10 +500,10 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     # 14,415 lenslets swamped any compute savings -- always measure real per-task payload size before
     # assuming a "ship the small stuff" design is actually small.
     # ------------------------------------------------------------------
-    for i in range(par.nlens):
+    for i in range(roi_index_low, roi_index_high + 1):
         if i % 10 == 0:
             log.info('  Processing lenslet row {:}'.format(i))
-        for j in range(par.nlens):
+        for j in range(roi_index_low, roi_index_high + 1):
             if np.all(good[:, i, j],):  # Do all PSFlets for this lenslet fall on the valid region of the detector?
                 
                 # Check to make sure that no part of x/yindx falls outside the range of the sensor
@@ -576,8 +604,14 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         x_center = xindx[k]                          # lenslet x centroids at wavelength k
         y_center = yindx[k]                          # lenslet y centroids at wavelength k
         good = (x_center > dy) * (x_center < xdim - dy) * (y_center > dy) * (y_center < ydim - dy)
+        if roi_mask is not None:
+            # Only reconstruct lenslets that were actually fit (inside the ROI); this both keeps the
+            # ROI-excluded NaNs out of model/resid and cuts the _tag_psflets cost proportionally.
+            good = good * roi_mask
+            coefs_flat = np.nan_to_num(np.reshape(cube[k].transpose(), -1))
+        else:
+            coefs_flat = np.reshape(cube[k].transpose(), -1)
         psflet_indx = _tag_psflets(ifsimage.data.shape, x_center, y_center, good, dx=10, dy=10)
-        coefs_flat = np.reshape(cube[k].transpose(), -1)
         resid -= psflets[k] * coefs_flat[psflet_indx]
         model += psflets[k] * coefs_flat[psflet_indx]
 
@@ -686,6 +720,12 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         cube = _smoothandmask(cube, np.ones(good.shape))
     else:
         cube = Image(data=cube, ivar=ivarcube)
+
+    # When an ROI was requested, guarantee the excluded lenslets read back as NaN (zero weight)
+    # regardless of what smoothandmask smeared across the ROI boundary above.
+    if roi_mask is not None:
+        cube.data[:, ~roi_mask] = np.nan
+        cube.ivar[:, ~roi_mask] = 0.
     _accumulate(timing, 'postprocess', t0)
 
 
