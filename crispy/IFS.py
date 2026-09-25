@@ -373,7 +373,6 @@ def reduceIFSMap(
         par.hdr.append(('CALDIR', par.wavecalDir.split(
             os.sep)[-2], 'Directory of wavelength solution'), end=True)
 
-    preprocessing_start = time.time()
     if isinstance(IFSimageName, str):
         IFSimage = Image(filename=IFSimageName)
         reducedName = os.path.splitext(IFSimageName.split(os.sep)[-1])[0]
@@ -399,7 +398,6 @@ def reduceIFSMap(
 
     if pixnoise is None:
         pixnoise = std**2
-    preprocessing_time = time.time() - preprocessing_start
 
     # The scope-limiting speed-ups are only implemented for the 'lstsq'-family methods (the slow
     # path these arguments were designed to accelerate). Fail loudly rather than silently ignoring
@@ -444,13 +442,7 @@ def reduceIFSMap(
     else:
         log.info("Method not found")
 
-    total_time = time.time() - start
-    log.info('Elapsed time: %fs' % total_time)
-
-    result_cube = cube[0] if (returnall and isinstance(cube, tuple)) else cube
-    if hasattr(result_cube, 'timing'):
-        result_cube.timing['preprocessing'] = preprocessing_time
-        result_cube.timing['total'] = total_time
+    log.info('Elapsed time: %fs' % (time.time() - start))
 
     return cube
 

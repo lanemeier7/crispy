@@ -1,6 +1,5 @@
 from astropy.io import fits
 import os
-import time
 import numpy as np
 from crispy.tools.initLogger import getLogger
 log = getLogger('crispy')
@@ -14,12 +13,6 @@ from crispy.tools.image import Image
 from scipy import interpolate
 import warnings
 warnings.filterwarnings("ignore")
-
-
-def _accumulate(timing, key, t0):
-    '''Add elapsed time since t0 to timing[key] (timing may be None to skip).'''
-    if timing is not None:
-        timing[key] = timing.get(key, 0.0) + (time.perf_counter() - t0)
 
 
 def _smoothandmask(datacube, good):
@@ -324,17 +317,11 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
             image reconstructed from the fit and ``resid`` is the data minus the
             model.
     '''
-    # Fine-grained timing instrumentation (see pipeline_timing_analysis.md in ifs-tools for
-    # context/results). Each phase is accumulated into `timing`, which is attached to the
-    # returned cube as `cube.timing` so callers can inspect/compare it programmatically.
-    timing = {}
-
     # ------------------------------------------------------------------
     # 1. Load the fitting basis: the "polychrome" cube of PSFlet images
     #    (one detector-plane image per wavelength bin) plus the companion
     #    "key" giving each lenslet's centroid position and validity flag.
     # ------------------------------------------------------------------
-    t0 = time.perf_counter()
     if specialPolychrome is None:
         try:
             polychromeR = fits.open(os.path.join(par.wavecalDir, 'polychromeR%d.fits.gz' % (par.R)))
@@ -343,9 +330,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         psflets = polychromeR[0].data
     else:
         psflets = specialPolychrome.copy()
-    _accumulate(timing, 'load_polychrome', t0)
 
-    t0 = time.perf_counter()
     polychromekey = fits.open(os.path.join(par.wavecalDir, 'polychromekeyR%d.fits' % (par.R)))
     xindx = polychromekey[1].data                    # x centroid of each lenslet, per wavelength
     yindx = polychromekey[2].data                    # y centroid of each lenslet, per wavelength
@@ -432,8 +417,6 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         log.info('Adding an extra flat component to fit, N={:}'.format(psflets.shape[0]))
     else:
         n_add = 0
-    _accumulate(timing, 'load_key_and_wavelist', t0)
-    n_wavelength_bins = psflets.shape[0]
 
     par.hdr.append(
         ('fitbkgnd',
@@ -493,12 +476,6 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
 
     ydim, xdim = ifsimage.data.shape
 
-    # Per-lenslet timing accumulators. fit_cutout_timing is a single shared dict passed into
-    # every fit_cutout() call so its internal sub-costs accumulate across all ~40k lenslets.
-    n_lenslets_total = par.nlens ** 2
-    n_lenslets_fit = 0
-    fit_cutout_timing = {}
-
     # ------------------------------------------------------------------
     # 4. Fit every lenslet independently. For each lenslet whose spectrum is
     #    fully on the detector, cut out its microspectrum and the matching
@@ -526,10 +503,8 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                     log.warning(f'TEMPORARY: Some x/y indices for lenslet ({i}, {j}) fall outside the sensor range')
                     print('This is probably going to cause the next line to fail')
                 
-                t0 = time.perf_counter()
                 subim, psflet_subarr, [y0, y1, x0, x1] = get_cutout(
                     ifsimage, xindx[:, i, j], yindx[:, i, j], psflets, dy, normpsflets=normpsflets)
-                _accumulate(timing, 'main_loop_get_cutout', t0)
                 # Important definitions:
                 # subim: 2D cutout of the detector image around this lenslet's microspectrum
                 # psflet_subarr: 3D cutout of the PSFlet basis where each slice is that lenslet's PSFlet at a different wavelength
@@ -545,12 +520,9 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                                     log.warning(f'TEMPORARY: One or more slices of the PSFlet subarray are all zeros for lenslet ({i}, {j})')
                                     print('This is probably going to cause the next line to fail')
                 try:
-                    t0 = time.perf_counter()
                     cube[:, j, i], ivarcube[:, j, i], modelij, chisq[j, i] = fit_cutout(
                         subim.copy(), psflet_subarr.copy(), mode=mode,
-                        niter=niter, pixnoise=pixnoise, fitbkgnd=fitbkgnd, timing=fit_cutout_timing)
-                    _accumulate(timing, 'main_loop_fit_cutout', t0)
-                    n_lenslets_fit += 1
+                        niter=niter, pixnoise=pixnoise, fitbkgnd=fitbkgnd)
 #                     model[y0:y1,x0:x1] += modelij
 #                     resid[y0:y1,x0:x1] -= modelij
                 except Exception:
@@ -613,7 +585,6 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     #    contributions are attributed correctly.
     # ------------------------------------------------------------------
     log.info('Reconstructing the detector image from the extracted cube')
-    t0 = time.perf_counter()
     for k in range(len(psflets)):
         ydim, xdim = ifsimage.data.shape
         x_center = xindx[k]                          # lenslet x centroids at wavelength k
@@ -633,7 +604,6 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     # Undo the gain scaling so model and residual are back in the input units.
     model /= gain
     resid /= gain
-    _accumulate(timing, 'reconstruct', t0)
 
     # ------------------------------------------------------------------
     # 6. Optionally build an upsampled ("hi-res") reconstruction of the
@@ -641,7 +611,6 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     #    as section 5 but on the finer grid.
     # ------------------------------------------------------------------
     if hires:
-        t0 = time.perf_counter()
         log.info('  Building high-resolution reconstruction of the detector image')
         hires_polychromeR = fits.open(
             os.path.join(par.wavecalDir,
@@ -658,14 +627,12 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
             coefs_flat = np.reshape(cube[i].transpose(), -1)
             hires_model += hires_polychromeR[i] * \
                 coefs_flat[psflet_indx] / upsample**2
-        _accumulate(timing, 'hires', t0)
 
     # ------------------------------------------------------------------
     # 7. Populate the output FITS header with the extraction metadata and a
     #    world-coordinate system (spatial RA/Dec tangent plane + logarithmic
     #    wavelength axis) so the cube can be interpreted downstream.
     # ------------------------------------------------------------------
-    t0 = time.perf_counter()
     if 'cubemode' not in par.hdr:
         par.hdr.append(('cubemode', 'Least squares', 'Method used to extract data cube'), end=True)
         par.hdr.append(('lam_min', np.amin(lam_midpts_full), 'Minimum (central) wavelength of extracted cube'), end=True)
@@ -754,8 +721,6 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     if roi_mask is not None:
         cube.data[:, ~roi_mask] = np.nan
         cube.ivar[:, ~roi_mask] = 0.
-    _accumulate(timing, 'postprocess', t0)
-
 
     # ------------------------------------------------------------------
     # 9. Write the products to disk: the primary cube file (flux + inverse
@@ -763,7 +728,6 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     #    and (optionally) background-offset / hi-res-model images.
     # ------------------------------------------------------------------
     log.info('  Writing the extracted cube and associated products to disk')
-    t0 = time.perf_counter()
     # Image(data=cube.data,ivar=ivarcube,header=par.hdr,extraheader=ifsimage.extraheader).write(name+'.fits',overwrite=True)
     out = fits.HDUList(fits.PrimaryHDU(None, par.hdr))
     out.append(fits.PrimaryHDU(cube.data, par.hdr))
@@ -784,19 +748,6 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     if hires:
         Image(data=hires_model, header=par.hdr, extraheader=ifsimage.extraheader).write(
             name + '_hires_model.fits', overwrite=True)
-    _accumulate(timing, 'write', t0)
-
-    # Merge in the per-lenslet fit_cutout() sub-costs (prefixed to avoid colliding with the
-    # outer keys above) and lenslet/wavelength-bin counts, then log a human-readable breakdown.
-    for key, val in fit_cutout_timing.items():
-        timing['fit_cutout_' + key] = val
-    timing['n_lenslets_total'] = n_lenslets_total
-    timing['n_lenslets_fit'] = n_lenslets_fit
-    timing['n_wavelength_bins'] = n_wavelength_bins
-    log.info('lstsqExtract timing breakdown (seconds):')
-    for key, val in timing.items():
-        log.info('    {:<28s} {}'.format(key, val))
-    cube.timing = timing
 
     if returnall:
         return cube, model, resid
@@ -927,7 +878,7 @@ def RL(img, psflets, niter=10, guess=None, eps=1e-10, prior=0.0):
     return val, np.array(res), np.array(loglike), count
 
 
-def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=False, timing=None):
+def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=False):
     """
     Fit the PSFlet basis to one lenslet's microspectrum and recover the
     best-fit per-wavelength coefficients (i.e. the extracted spectrum).
@@ -968,10 +919,6 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=Fal
         If True, the last PSFlet is a uniform background component; it is
         excluded from the covariance/reconvolution step (see comment below)
         and re-inserted into the R matrix afterward.
-    timing:  dict or None
-        If given, per-section elapsed time (seconds) is accumulated into this
-        dict under keys 'build_matrix', 'inv', 'sqrtm', 'weighted_matrix_build',
-        and 'solve'. Callers reuse one dict across many calls to get a total.
 
     Returns
     -------
@@ -1018,44 +965,32 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=Fal
     #    from the matrix diagonalization step, then re-inserts it into R.
     # ------------------------------------------------------------------
     if fitbkgnd:
-        t0 = time.perf_counter()
         psflets_flat = np.reshape(psflets[:-1, :, :], (N - 1, -1))
         A = psflets_flat.T
         inverse_covariance = np.dot(A.T, A)
-        _accumulate(timing, 'build_matrix', t0)
-        t0 = time.perf_counter()
         try:
             covariance = np.linalg.inv(inverse_covariance)  # Do NOT use np.linalg.pinv() here because if it encounters an uninvertible matrix, it will give a result, but things will break later.
         except Exception:
             raise ValueError("Inverse covariance matrix could not be computed.")
-        _accumulate(timing, 'inv', t0)
-        t0 = time.perf_counter()
         Q = sp.linalg.sqrtm(inverse_covariance)
         s = np.sum(Q, axis=1)
         tR = Q / s[np.newaxis, :]
         R = np.zeros((tR.shape[0] + 1, tR.shape[1] + 1))
         R[:tR.shape[0], :tR.shape[1]] = tR
         R[-1, -1] = 1
-        _accumulate(timing, 'sqrtm', t0)
         # revert back to normal psflets for least squares
         psflets_flat = np.reshape(psflets, (N, -1))
         A = psflets_flat.T
 
     # no "constant" if not fitting the background
     else:
-        t0 = time.perf_counter()
         psflets_flat = np.reshape(psflets, (N, -1))
         A = psflets_flat.T
         inverse_covariance = np.dot(A.T, A)
-        _accumulate(timing, 'build_matrix', t0)
-        t0 = time.perf_counter()
         covariance = np.linalg.inv(inverse_covariance)
-        _accumulate(timing, 'inv', t0)
-        t0 = time.perf_counter()
         Q = sp.linalg.sqrtm(inverse_covariance)
         s = np.sum(Q, axis=1)
         R = Q / s[np.newaxis, :]
-        _accumulate(timing, 'sqrtm', t0)
 
     # ------------------------------------------------------------------
     # 3. mode 'lstsq': single-pass weighted least squares + reconvolution.
@@ -1063,7 +998,6 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=Fal
     #    normal equations for the raw solution f, then reconvolve with R.
     # ------------------------------------------------------------------
     if mode == 'lstsq':
-        t0 = time.perf_counter()
         guess = np.ones(N) * np.sum(subim_flat) / float(N)
         model_variance = np.reshape(
             np.sum(psflets * guess[:, np.newaxis, np.newaxis], axis=0) + pixnoise, -1)
@@ -1073,18 +1007,13 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=Fal
         # algebraically identical but avoids the O(n_pixels^2) dense matmul.
         Ninv_diag = 1. / (model_variance + 1e-10)
         inverse_covariance = np.dot(A.T, Ninv_diag[:, np.newaxis] * A)
-        _accumulate(timing, 'weighted_matrix_build', t0)
-        t0 = time.perf_counter()
         covariance = np.linalg.inv(inverse_covariance)
-        _accumulate(timing, 'inv', t0)
-        t0 = time.perf_counter()
         right_hand_side = np.dot(A.T, Ninv_diag * subim_flat)
         f = np.dot(covariance, right_hand_side)
         coef = np.dot(R, f)
         icov = 1. / np.diag(np.dot(R, np.dot(covariance, R.T)))
         model = np.sum(psflets * coef[:, np.newaxis, np.newaxis], axis=0)
         chi2 = np.sum((subim - model)**2 / (model + pixnoise)) / len(subim_flat)
-        _accumulate(timing, 'solve', t0)
 
     # ------------------------------------------------------------------
     # 4. mode 'lstsq_conv' (preferred): iterate the weighted fit, refining the
@@ -1095,7 +1024,6 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=Fal
         guess = np.ones(N) * np.sum(subim_flat) / float(N)
 
         for i in range(niter):
-            t0 = time.perf_counter()
             model_variance = np.reshape(
                 np.sum(psflets * guess[:, np.newaxis, np.newaxis], axis=0) + pixnoise, -1)
             # The 'lstsq' branch above replaced this dense-diagonal Ninv with a 1D array +
@@ -1104,21 +1032,14 @@ def fit_cutout(subim, psflets, mode='lstsq', niter=3, pixnoise=0.0, fitbkgnd=Fal
             # 'lstsq_conv' is ever exercised/benchmarked.
             Ninv = np.diag(1. / (model_variance + 1e-10))
             inverse_covariance = np.dot(A.T, np.dot(Ninv, A))
-            _accumulate(timing, 'weighted_matrix_build', t0)
-            t0 = time.perf_counter()
             covariance = np.linalg.inv(inverse_covariance)
-            _accumulate(timing, 'inv', t0)
-            t0 = time.perf_counter()
             Q = sp.linalg.sqrtm(inverse_covariance)
             s = np.sum(Q, axis=0)
             lstsq_inverse_variance = s**2  # inverse variance
             R = Q / s[:, np.newaxis]
-            _accumulate(timing, 'sqrtm', t0)
-            t0 = time.perf_counter()
             right_hand_side = np.dot(A.T, np.dot(Ninv, subim_flat))
             f = np.dot(covariance, right_hand_side)
             guess = np.dot(R, f)
-            _accumulate(timing, 'solve', t0)
         coef = guess
         icov = lstsq_inverse_variance
         model = np.sum(psflets * coef[:, np.newaxis, np.newaxis], axis=0)
@@ -1321,14 +1242,10 @@ def intOptimalExtract(par, name, IFSimage, smoothandmask=True, sum=False):
 
     """
 
-    t0 = time.perf_counter()
     loc = PSFLets(load=True, infiledir=par.wavecalDir)
-    psflets_load_time = time.perf_counter() - t0
 
-    t0 = time.perf_counter()
     # num_wavelengths = int(par.BW*par.npixperdlam*par.R)
     lam_midpts, scratch = calculateWaveList(par, method='optext')
-    wavelist_time = time.perf_counter() - t0
 
     datacube = fitspec_intpix_np(
         par,
@@ -1338,23 +1255,12 @@ def intOptimalExtract(par, name, IFSimage, smoothandmask=True, sum=False):
         smoothandmask=smoothandmask,
         sum=sum)
 
-    t0 = time.perf_counter()
     # datacube.write(name+'.fits',overwrite=True)
     out = fits.HDUList(fits.PrimaryHDU(None, par.hdr))
     out.append(fits.PrimaryHDU(datacube.data, par.hdr))
     out.append(fits.PrimaryHDU(datacube.ivar, par.hdr))
     out.append(fits.PrimaryHDU(None, datacube.extraheader))
     out.writeto(name + '.fits', overwrite=True)
-    write_time = time.perf_counter() - t0
-
-    timing = getattr(datacube, 'timing', {})
-    timing['psflets_load'] = psflets_load_time
-    timing['wavelist'] = wavelist_time
-    timing['write'] = write_time
-    log.info('intOptimalExtract timing breakdown (seconds):')
-    for key, val in timing.items():
-        log.info('    {:<28s} {}'.format(key, val))
-    datacube.timing = timing
 
     return datacube
 
@@ -1530,8 +1436,6 @@ def fitspec_intpix_np(
             Reduced cube in the image.data field
     """
 
-    timing = {}
-    t0 = time.perf_counter()
     xindx = PSFlet_tool.xindx
     yindx = PSFlet_tool.yindx
     Nmax = PSFlet_tool.nlam_max
@@ -1566,10 +1470,7 @@ def fitspec_intpix_np(
 #     yindx = polychromekey[2].data+0.5
 #     good = polychromekey[3].data
     good = PSFlet_tool.good
-    _accumulate(timing, 'setup_metadata', t0)
 
-    n_lenslets_total = xindx.shape[0] * yindx.shape[1]
-    n_lenslets_fit = 0
     for i in range(xindx.shape[0]):
         for j in range(yindx.shape[1]):
             if good[i, j]:
@@ -1579,8 +1480,6 @@ def fitspec_intpix_np(
                 _lam = PSFlet_tool.lam_indx[i, j, :PSFlet_tool.nlam[i, j]]
                 iy = np.nanmean(_y)
                 if ~np.isnan(iy) and int(_x[-1]) < img.shape[1]:
-                    n_lenslets_fit += 1
-                    t0 = time.perf_counter()
                     i1 = int(iy - delt_y / 2.) + 1
 #                     print i,j,len(_lam),int(_x[-1]) + 1-int(_x[0])
                     dy = _y[xarr[:, :len(_lam)]] - y[i1:i1 + delt_y,
@@ -1605,8 +1504,6 @@ def fitspec_intpix_np(
                         weight * data * ivar, axis=0)
                     if ~sum:
                         coefs[:len(_lam), i, j] /= np.sum(weight**2 * ivar, axis=0)
-                    _accumulate(timing, 'main_loop_weighted_sum', t0)
-                    t0 = time.perf_counter()
                     tck = interpolate.splrep(
                         _lam, coefs[:len(_lam), i, j], s=0, k=3)
                     cube[:, j, i] = interpolate.splev(lamlist, tck, ext=1)
@@ -1622,7 +1519,6 @@ def fitspec_intpix_np(
                         s=0,
                         k=3)
                     ivarcube[:, j, i] = interpolate.splev(lamlist, tck, ext=1)
-                    _accumulate(timing, 'main_loop_spline', t0)
                 else:
                     cube[:, j, i] = np.nan
                     ivarcube[:, j, i] = 0.
@@ -1724,7 +1620,6 @@ def fitspec_intpix_np(
     else:
         lenslet_mask = np.ones(cube.shape)
 
-    t0 = time.perf_counter()
     if smoothandmask:
         if 'SMOOTHED' not in par.hdr:
             par.hdr.append(
@@ -1740,18 +1635,12 @@ def fitspec_intpix_np(
                  'Cube NOT smoothed over bad lenslets'),
                 end=True)
         cube = Image(data=cube, ivar=ivarcube)
-    _accumulate(timing, 'smoothandmask', t0)
 
     cube = Image(
         data=cube.data,
         ivar=cube.ivar,
         header=par.hdr,
         extraheader=im.extraheader)
-
-    timing['n_lenslets_total'] = n_lenslets_total
-    timing['n_lenslets_fit'] = n_lenslets_fit
-    timing['n_wavelength_bins'] = len(lamlist)
-    cube.timing = timing
 
     return cube
 
