@@ -31,10 +31,10 @@ class Params(object):
         self.nlens = 201            # Number of lenslets across array
         self.pitch = 110e-6         # Lenslet pitch (meters)
         self.interlace = 3.         # Interlacing
-        self.philens = -0.31344050546696955  # Rotation angle of the lenslets (radians); experimentally determined
+        self.philens = -arcsin(1. / sqrt(self.interlace**2 + 1))  # Rotation angle of the lenslets (radians).
         self.pinhole = True         # Use a pinhole grid?
-        self.lenslet_sampling = 1. / 2.  # lenslet size in lambda/D
-        self.lenslet_wav = 600.     # Wavelength at which this is defined (nm)
+        self.lenslet_sampling = 1. / 2.4  # lenslet size in lambda/D
+        self.lenslet_wav = 686.     # Wavelength at which this is defined (nm)
 
         ######################################################################
         # Detector stuff
@@ -45,18 +45,19 @@ class Params(object):
         self.pixsize = 3.76e-6      # Pixel size (meters)
         self.fitting_window = [1212, 4936, 0, 3724]  # Pixel bounds [xmin, xmax, ymin, ymax] for fitting lamsol.dat
         self.pxperdetpix = 1        # Oversampling of the final detector pixels
-        self.convolve = True        # whether to convolve the existing kernels with gaussian kernel (simulating defocus)
-        self.FWHM = 2               # FWHM of gaussian kernel
-        self.FWHMlam = 660.         # Lam at which FWHM is defined
+        self.convolve = True        # Whether to convolve kernels with Gaussian (simulating defocus)
+        self.FWHM = 1.85               # FWHM at detector plane (detector pixels)
+        self.FWHMlam = 686.         # Wavelength at which FWHM is defined (nm)
         self.gaussian = False       # Use standard Gaussian kernels instead of library
         self.gaussian_hires = False  # Use Gaussians for hires PSFLet matching
 
-        # self.RN = 0.2               # FWHM of gaussian kernel
-        # self.CIC = 1e-3             # Lam at which FWHM is defined
-        # self.dark = 1e-5            # Use standard Gaussian kernels instead of library
-        # self.Traps = False          # Use standard Gaussian kernels instead of library
+        # Placeholder detector noise parameters (unused)
+        # self.RN = 0.2               # Read noise (electrons)
+        # self.CIC = 1e-3             # Clock-induced charge (electrons/pixel/frame)
+        # self.dark = 1e-5            # Dark current (electrons/pixel/second)
+        # self.Traps = False          # Use trap-assisted recombination model
 
-        # self.QE = 0.7               # detector QE; need to make this wavelength-dependent
+        self.QE = 1.0               # detector QE; need to make this wavelength-dependent
         # self.losses = 0.34          # total losses for on-axis PSF (given by J. Krist)
         # self.Nreads = 10            # number of reads for a frame
         # self.timeframe = 1000       # time in second for a frame (from file)
@@ -69,7 +70,7 @@ class Params(object):
         self.BW = 0.18              # Spectral bandwidth (if distortPISCES==False)
         self.npixperdlam = 2.0      # Number of pixels per spectral resolution element
         self.nchanperspec_lstsq = 2.0  # num_wavelengths per pixel for least squares
-        self.R = 70                 # Spectral resolving power
+        self.R = 120                 # Spectral resolving power
 
         # carry-over old parameter names
         self.lenslet_wav = self.lenslet_wav

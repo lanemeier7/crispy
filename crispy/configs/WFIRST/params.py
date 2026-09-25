@@ -48,13 +48,11 @@ class Params(object):
         self.npix = 1024            # Number of pixels in final detector
         self.pixsize = 13e-6        # Pixel size (meters)
         self.pxperdetpix = 1       # Oversampling of the final detector pixels
-        self.convolve = True        # whether to convolve the existing kernels with
-        # gaussian kernel (simulating defocus)
-        self.FWHM = 2.               # FWHM of gaussian kernel
-        self.FWHMlam = 770.         # Lam at which FWHM is defined
+        self.convolve = True        # Whether to convolve kernels with Gaussian (simulating defocus)
+        self.FWHM = 2.               # FWHM at detector plane (detector pixels)
+        self.FWHMlam = 770.         # Wavelength at which FWHM is defined (nm)
         self.gaussian = True        # Use standard Gaussian kernels instead of library
-        self.gaussian_hires = True  # Use Gaussians for hires PSFLet matching, instead
-        # of Lucy-Richardson deconvolution
+        self.gaussian_hires = True  # Use Gaussians for hires PSFLet matching instead of Lucy-Richardson deconvolution
         # use the wavelength calibration to place the PSFLets on the detector
         self.PSFLetPositions = False
 

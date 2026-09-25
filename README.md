@@ -73,12 +73,19 @@ from crispy.IFS import polychromeIFS
 from crispy.tools.image import Image
 from astropy.io import fits
 
-# Load DST2 parameters (point to crispy package root)
+# Load DST2 parameters
 crispy_root = os.path.dirname(os.path.abspath(__file__))
 par = params.Params(codeRoot=crispy_root)
 
+# Configure to use Gaussian PSFs (simpler for standalone scripts)
+par.gaussian = True
+par.PSFLetPositions = False
+par.savePoly = False
+par.saveRotatedInput = False
+par.saveLensletPlane = False
+
 # Create input cube (wavelength, x, y)
-wavelengths = np.linspace(600, 900, 10)  # nm
+wavelengths = np.linspace(600, 800, 10)  # nm
 input_cube = np.ones((10, 64, 64))
 
 # Wrap in Image object with required header keywords
@@ -88,7 +95,9 @@ header['LAM_C'] = 0.75   # microns (center wavelength)
 input_image = Image(data=input_cube, header=header)
 
 # Run IFS simulation
-detector_image = polychromeIFS(par, wavelengths, input_image)
+# Use parallel=False for simpler scripts, lam_arr to avoid loading calibration files
+detector_image = polychromeIFS(par, wavelengths, input_image, 
+                               parallel=False, lam_arr=wavelengths, QE=False)
 print(f"Detector image shape: {detector_image.shape}")
 ```
 
@@ -112,26 +121,28 @@ print(f"WFIRST R = {wfirst_par.R}")  # R = 50
 
 PISCES and HCIFS configurations follow the same pattern (`crispy.configs.PISCES`, `crispy.configs.HCIFS`).
 
-### Optimal Extraction
+### Working with Data Cubes
 ```python
 import numpy as np
-import os
 from crispy.tools.image import Image
-from crispy.configs.DST2 import params as dst2_params
-from crispy.unitTests import testOptExt
+from astropy.io import fits
 
-crispy_root = os.path.dirname(os.path.abspath(__file__))
-
-# Load parameters
-par = dst2_params.Params(codeRoot=crispy_root)
-
-# Create mock detector image
-detector_data = np.random.rand(128, 128) * 1000
+# Create or load a detector image
+detector_data = np.random.rand(1024, 1024) * 1000
 image = Image(data=detector_data)
 
-# Perform optimal extraction
-spectrum, variance = testOptExt(par, image, lensX=0, lensY=0)
-print(f"Spectrum shape: {spectrum.shape}")
+# Add header information
+image.header['INSTRUME'] = 'CRISPY'
+image.header['PIXSIZE'] = 3.76e-6  # pixel size in meters
+
+# Save to FITS file
+image.write('detector_image.fits')
+print(f"Image saved with shape {image.data.shape}")
+
+# Load from FITS
+loaded = Image(filename='detector_image.fits')
+print(f"Image loaded: {loaded.data.shape}")
+print(f"Header keys: {list(loaded.header.keys())[:5]}")
 ```
 
 ### Wavelength Solution Files

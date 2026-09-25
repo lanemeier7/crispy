@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crispy"
+version = "1.0.0"
+description = "The Coronagraph and Rapid Imaging Spectrograph in Python"
+readme = "README.md"
+license = { text = "GNU GPLv3" }
+requires-python = ">=3.8"
+authors = [
+    { name = "Maxime Rizzo", email = "maxime.j.rizzo@nasa.gov" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "numpy>=1.19.0",
+    "scipy>=1.5.0",
+    "matplotlib>=3.3.0",
+    "astropy>=4.0",
+    "photutils>=1.0.0",
+    "pandas",
+    "seaborn",
+]
+
+[project.urls]
+Repository = "https://github.com/mjrfringes/crispy"
+
+[tool.setuptools]
+packages = [
+    "crispy",
+    "crispy.tools",
+    "crispy.configs",
+    "crispy.configs.DST2",
+    "crispy.configs.PISCES",
+    "crispy.configs.HCIFS",
+]
+include-package-data = true
