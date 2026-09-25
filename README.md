@@ -1,144 +1,137 @@
-# 🌟 CRISPY
-## The Coronagraph Rapid Imaging Spectrograph in Python
+# CRISPY
+
+## The Coronagraph and Rapid Imaging Spectrograph in Python
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-GNU%20GPLv3-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-✅%20Passing-brightgreen.svg)]()
 
-**CRISPY** simulates the WFIRST (now Roman Space Telescope) Integral Field Spectrograph with high-fidelity modeling of optical effects, detector characteristics, and data reduction pipelines.
-
----
-
-## 🎯 **Features**
-
-- 🔭 **High-Fidelity IFS Simulation**: Complete modeling of WFIRST/Roman Space Telescope IFS
-- 🌈 **Polychromatic Processing**: Full spectral cube generation and analysis
-- 🎛️ **Multiple Configurations**: Support for WFIRST and PISCES instruments
-- 🧪 **Comprehensive Testing**: Modern pytest framework with emoji output
-- 📊 **Data Reduction Tools**: Optimal extraction, wavelength calibration, and more
-- 🐍 **Python 3.8+**: Modernized for current Python standards
+**CRISPY** simulates integral field spectrographs - originally built around the since-descoped Roman Space Telescope integral field spectrograph, and since extended to lab testbeds such as PISCES and DST2 - with high-fidelity modeling of optical effects, detector characteristics, and data reduction pipelines. Beyond simulation, CRISPY includes a mature set of tools for wavelength-calibration diagnostics, least-squares spectral extraction, and IFS data-cube visualization built up from real lab and testbed data.
 
 ---
 
-## 🚀 **Quick Start**
+## Features
+
+- **IFS Simulation**: modeling of PISCES and DST2 integral field spectrographs, and more.
+- **Polychromatic Processing**: full spectral cube generation and analysis
+- **Multiple Configurations**: swap between instrument parameter sets (WFIRST, PISCES, DST2, HCIFS) without touching the core pipeline
+- **Wavelength Calibration & Troubleshooting**: dispersion-solution fitting (`locate_psflets.py`, `wavecal.py`) with diagnostic plots for evaluating fit quality
+- **Data Reduction Tools**: least-squares and optimal extraction, IFS cube visualization, a modern multithreading backend
+- **Python 3.8+**
+
+---
+
+## Quick Start
 
 ### Prerequisites
-- [Conda](https://conda.io/) or [Mamba](https://mamba.readthedocs.io/) package manager
+- Python 3.8+ and `pip`
 
 ### Installation
 
-#### 🐍 **Option 1: Using Conda/Mamba Environment (Recommended)**
+Install directly into your existing Python environment:
+
 ```bash
-# Clone the repository
 git clone https://github.com/mjrfringes/crispy.git
 cd crispy
+pip install -e .
+```
 
-# Create and activate the conda environment (use 'mamba' instead of 'conda' if preferred)
+A dedicated environment isn't required to use CRISPY for analysis. If you want the full development setup (Jupyter notebooks, Sphinx docs), a conda environment is provided:
+
+```bash
 conda env create -f environment.yml
 conda activate crispy
-
-# Install in development mode
 pip install -e .
-
-# Test the installation 🧪
-python test_environment.py
-```
-
-#### ⚡ **Option 2: Direct Installation**
-```bash
-# Clone and install directly
-git clone https://github.com/mjrfringes/crispy.git
-cd crispy
-python setup.py install
 ```
 
 ---
 
-## 🧪 **Running Tests**
+## Running Tests
 
-CRISPY includes a modern pytest framework with beautiful emoji output:
+CRISPY uses a pytest-based test suite, organized by marker:
 
-### **Quick Test Commands**
 ```bash
-# Always activate environment first
-conda activate crispy
-
-# Run all working tests ✅
-python run_tests.py --working
-
-# Run unit tests only 🧪  
-python run_tests.py --unit
-
-# Run integration tests 🚀
-python run_tests.py --integration
-
-# Run fast tests (skip slow ones) ⚡
-python run_tests.py --fast
-
-# Run with coverage report 📊
-python run_tests.py --coverage
-
-# Get help with all options
-python run_tests.py --help
+python run_tests.py --working      # known-working tests
+python run_tests.py --unit         # unit tests only
+python run_tests.py --integration  # integration tests
+python run_tests.py --fast         # skip slow tests
+python run_tests.py --coverage     # with coverage report
+python run_tests.py --help         # all options
 ```
 
-### **Example Output**
-```
-🚀 Starting CRISPY Test Suite
-==================================================
-tests/unit/test_core_functionality.py ✅.✅✅✅.✅✅ 
-tests/unit/test_working_functions.py ✅.✅✅✅.✅✅
-==================================================
-📊 Test Session Complete!
-🎉 All tests passed!
-```
+**TODO:** many tests — particularly those under the `experimental` marker — are not currently passing or complete; the test suite is a work in progress.
 
 ---
 
-## 📖 **Usage Examples**
+## Usage Examples
 
 ### Basic IFS Simulation
 ```python
 import numpy as np
-from crispy.configs.WFIRST import params
+import os
+from crispy.configs.DST2 import params
 from crispy.IFS import polychromeIFS
+from crispy.tools.image import Image
+from astropy.io import fits
 
-# Load WFIRST parameters
-par = params.Params()
+# Load DST2 parameters (point to crispy package root)
+crispy_root = os.path.dirname(os.path.abspath(__file__))
+par = params.Params(codeRoot=crispy_root)
 
 # Create input cube (wavelength, x, y)
 wavelengths = np.linspace(600, 900, 10)  # nm
 input_cube = np.ones((10, 64, 64))
 
+# Wrap in Image object with required header keywords
+header = fits.PrimaryHDU().header
+header['PIXSIZE'] = 0.1  # λ/D
+header['LAM_C'] = 0.75   # microns (center wavelength)
+input_image = Image(data=input_cube, header=header)
+
 # Run IFS simulation
-detector_image = polychromeIFS(par, wavelengths, input_cube)
+detector_image = polychromeIFS(par, wavelengths, input_image)
+print(f"Detector image shape: {detector_image.shape}")
 ```
 
 ### Working with Different Instruments
 ```python
-# WFIRST configuration
+import os
+from crispy.configs.DST2 import params as dst2_params
 from crispy.configs.WFIRST import params as wfirst_params
-wfirst_par = wfirst_params.Params()
 
-# PISCES configuration  
-from crispy.configs.PISCES import params as pisces_params
-pisces_par = pisces_params.Params()
+crispy_root = os.path.dirname(os.path.abspath(__file__))
 
+# DST2 configuration
+dst2_par = dst2_params.Params(codeRoot=crispy_root)
+
+# WFIRST configuration
+wfirst_par = wfirst_params.Params(codeRoot=crispy_root)
+
+print(f"DST2 R = {dst2_par.R}")      # R = 120
 print(f"WFIRST R = {wfirst_par.R}")  # R = 50
-print(f"PISCES R = {pisces_par.R}")  # R = 70
 ```
+
+PISCES and HCIFS configurations follow the same pattern (`crispy.configs.PISCES`, `crispy.configs.HCIFS`).
 
 ### Optimal Extraction
 ```python
+import numpy as np
+import os
 from crispy.tools.image import Image
+from crispy.configs.DST2 import params as dst2_params
 from crispy.unitTests import testOptExt
 
-# Load your detector image
+crispy_root = os.path.dirname(os.path.abspath(__file__))
+
+# Load parameters
+par = dst2_params.Params(codeRoot=crispy_root)
+
+# Create mock detector image
 detector_data = np.random.rand(128, 128) * 1000
 image = Image(data=detector_data)
 
 # Perform optimal extraction
 spectrum, variance = testOptExt(par, image, lensX=0, lensY=0)
+print(f"Spectrum shape: {spectrum.shape}")
 ```
 
 ### Wavelength Solution Files
@@ -149,38 +142,47 @@ given lenslet index and wavelength into detector `(x, y)` coordinates.
 
 ---
 
-## 📁 **Project Structure**
+## Project Structure
 
 ```
 crispy/
-├── crispy/                 # Main package
-│   ├── WFIRST/            # WFIRST instrument parameters
-│   ├── PISCES/            # PISCES instrument parameters  
-│   ├── tools/             # Analysis and processing tools
-│   └── *.py               # Core modules
-├── tests/                 # Modern pytest test suite
-│   ├── unit/              # Unit tests
-│   ├── integration/       # Integration tests
-│   └── conftest.py        # Test fixtures
-├── docs/                  # Documentation and notebooks
-├── environment.yml        # Conda environment
-├── setup.py              # Package setup
-├── pytest.ini           # pytest configuration  
-└── run_tests.py         # Test runner with emoji support
+├── crispy/                  # Main package
+│   ├── IFS.py                # Core simulation pipeline
+│   ├── ETC.py                # Exposure time calculator
+│   ├── unitTests.py           # Legacy test utilities
+│   ├── configs/               # Instrument parameter sets
+│   │   ├── WFIRST/
+│   │   ├── PISCES/
+│   │   ├── DST2/
+│   │   └── HCIFS/
+│   ├── tools/                 # Analysis and processing tools
+│   │   ├── wavecal.py          # Wavelength calibration
+│   │   ├── locate_psflets.py   # Dispersion-solution fitting/diagnostics
+│   │   ├── reduction.py        # Spectral extraction (lstsq, optimal)
+│   │   ├── postprocessing.py    # Cube visualization and analysis
+│   │   └── ...
+│   ├── ReferenceFiles/          # Calibration data (PISCES, DST2)
+│   └── SimResults/             # Simulation output directory
+├── tests/                    # pytest test suite
+│   ├── unit/                  # Unit tests (working + experimental)
+│   └── integration/            # Integration tests
+├── docs/                     # Sphinx documentation and notebooks
+├── pyproject.toml            # Package metadata and dependencies
+├── environment.yml           # Optional conda dev environment
+├── pytest.ini                # pytest configuration
+└── run_tests.py               # Test runner
 ```
 
 ---
 
-## 🛠️ **Development**
+## Development
 
 ### Running Notebooks
 ```bash
-# Start Jupyter in the crispy environment
 conda activate crispy
 jupyter notebook
-
-# Navigate to docs/source/notebooks/ for examples
 ```
+Example notebooks live in `docs/source/notebooks/`.
 
 ### Building Documentation
 ```bash
@@ -192,59 +194,56 @@ make html
 Tests are organized by category with descriptive markers:
 
 ```python
-@pytest.mark.working      # ✅ Known working tests
-@pytest.mark.experimental # ⚠️  Experimental features  
-@pytest.mark.slow         # 🐌 Long-running tests
-@pytest.mark.requires_data # 📁 Needs reference data
+@pytest.mark.working       # known working tests
+@pytest.mark.experimental  # experimental / known-broken features
+@pytest.mark.slow          # long-running tests
+@pytest.mark.requires_data # needs reference data
 ```
 
 ---
 
-## 🌐 **Documentation**
+## Documentation
 
-- **📚 Full Documentation**: [https://mjrfringes.github.io/crispy/index.html](https://mjrfringes.github.io/crispy/index.html)
-- **🌈 Wavelength Solution Format**: build the docs locally and open the `Wavelength Solution Files` page for `lamsol.dat` details
-- **🔧 Developer Guide**: See `CLAUDE.md` for development workflow
-- **📓 Example Notebooks**: Located in `docs/source/notebooks/`
+- **Full Documentation**: [https://mjrfringes.github.io/crispy/index.html](https://mjrfringes.github.io/crispy/index.html)
+- **Wavelength Solution Format**: build the docs locally and open the `Wavelength Solution Files` page for `lamsol.dat` details
+- **Developer Guide**: see `CLAUDE.md` for development workflow
+- **Example Notebooks**: located in `docs/source/notebooks/`
 
 ---
 
-## 👥 **Contributors**
+## Contributors
 
-**Original Development Team:**
 - Maxime Rizzo
-- Tim Brandt  
+- Tim Brandt
 - Neil Zimmerman
 - Tyler Groff
 - Prabal Saxena
 - Mike McElwain
 - Avi Mandell
+- Evan Bray
+- Lane Meier
 
 **Institution:** NASA Goddard Space Flight Center
 
 ---
 
-## 📜 **License**
+## License
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🐛 **Issues & Support**
+## Issues & Support
 
-- **🐛 Bug Reports**: [GitHub Issues](https://github.com/mjrfringes/crispy/issues)
-- **💡 Feature Requests**: [GitHub Discussions](https://github.com/mjrfringes/crispy/discussions)
-- **📧 General Questions**: Contact the development team
+- **Bug Reports**: [GitHub Issues](https://github.com/mjrfringes/crispy/issues)
+- **Feature Requests**: [GitHub Discussions](https://github.com/mjrfringes/crispy/discussions)
+- **General Questions**: contact the development team
 
 ---
 
-## 🎉 **Getting Started**
+## Getting Started
 
-Ready to simulate some spectra? 
-
-1. **⬇️ Install**: Follow the installation instructions above
-2. **🧪 Test**: Run `python run_tests.py --working` to verify everything works  
-3. **📚 Learn**: Check out the notebooks in `docs/source/notebooks/`
-4. **🚀 Simulate**: Start with the basic examples above
-
-**Happy Simulating!** ✨🔭
+1. **Install**: follow the installation instructions above
+2. **Test**: run `python run_tests.py --working` to verify everything works
+3. **Learn**: check out the notebooks in `docs/source/notebooks/`
+4. **Simulate**: start with the basic examples above
