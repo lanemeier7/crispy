@@ -332,13 +332,16 @@ def reduceIFSMap(
             Only used for the 'lstsq'-family methods. Detector gain (ADU/photoelectron), applied to convert raw
             detector units to photoelectrons before fitting (and converted back afterwards).
     data_cube_bandpass_nm: two-element list/tuple or None, optional (default None)
-            Only used for the 'lstsq'-family methods. Optional speed-up that limits the wavelength range of the
-            reduction by shrinking the wavelength axis of the main reduction loops. Specify as
-            ``[bandpass_desired_min, bandpass_desired_max]`` in nanometers. The final cube's wavelength bins will
-            not land exactly on these values, but the resulting cube bandpass is guaranteed to encompass the
-            requested range. Both endpoints must fall within the wavelength-calibration bandpass (the full lamsol
-            sweep range) or a ValueError is raised. Intended for testing, where the illuminated bandpass is often
-            much narrower than the full wavecal sweep that otherwise sets the (expensive) wavelength-bin count.
+            Only used for the 'lstsq'-family methods. Optional speed-up that limits the wavelength range actually
+            fit by shrinking the wavelength axis of the main reduction loops. Specify as
+            ``[bandpass_desired_min, bandpass_desired_max]`` in nanometers. The output cube keeps the full
+            wavelength-axis length of the calibration bandpass; wavelength bins outside the requested range are
+            not fit and are set to NaN (zero inverse variance), the same NaN-padding convention used by
+            ``data_cube_ROI_side_length_lenslets`` below. The bins that ARE fit will not land exactly on the
+            requested endpoints, but the fit range is guaranteed to encompass the requested range. Both endpoints
+            must fall within the wavelength-calibration bandpass (the full lamsol sweep range) or a ValueError is
+            raised. Intended for testing, where the illuminated bandpass is often much narrower than the full
+            wavecal sweep that otherwise sets the (expensive) wavelength-bin count.
     data_cube_ROI_side_length_lenslets: int or None, optional (default None)
             Only used for the 'lstsq'-family methods. Optional speed-up that limits the spatial extent of the
             reduction to a square region of lenslets, centered on the center of the microlens array, by shrinking
@@ -766,17 +769,30 @@ def visualize_IFS_cube(cube_data, lam_midpts=None, scale='linear'):
     fig, ax = plt.subplots(figsize=(8, 7))
     plt.subplots_adjust(bottom=0.18)
 
-    # Offset each slice so min > 0, needed whenever log scale is used.
-    cube_log = np.array([cube_data[i] - np.nanmin(cube_data[i]) + 1E-10 for i in range(len(cube_data))])
+    # Offset each slice so min > 0, needed whenever log scale is used. Avoid all-NaN slices.
+    cube_log = np.zeros_like(cube_data)
+    for i in range(len(cube_data)):
+        slice_min = np.nanmin(cube_data[i])
+        if np.isfinite(slice_min):
+            cube_log[i] = cube_data[i] - slice_min + 1E-10
+        else:
+            cube_log[i] = np.nan
 
     state = {'scale': scale}
 
     def _get_slice_data(idx):
         return cube_log[idx] if state['scale'] == 'log' else cube_data[idx]
 
+    def _get_valid_vmin_vmax(slice_data):
+        """Compute vmin/vmax, handling all-NaN slices by returning safe defaults."""
+        vmin_val = np.nanpercentile(slice_data, 1)
+        vmax_val = np.nanmax(slice_data)
+        if not (np.isfinite(vmin_val) and np.isfinite(vmax_val)):
+            vmin_val, vmax_val = 0.0, 1.0
+        return vmin_val, vmax_val
+
     initial_data = _get_slice_data(initial_slice)
-    vmin = np.nanpercentile(initial_data, 1)
-    vmax = np.nanmax(initial_data)
+    vmin, vmax = _get_valid_vmin_vmax(initial_data)
     norm = LogNorm(vmin=vmin, vmax=vmax) if scale == 'log' else None
 
     image_display = ax.imshow(initial_data, cmap='gist_heat', origin='lower', norm=norm)
@@ -799,8 +815,7 @@ def visualize_IFS_cube(cube_data, lam_midpts=None, scale='linear'):
 
     def _apply_scale(idx):
         slice_data = _get_slice_data(idx)
-        vmin = np.nanpercentile(slice_data, 1)
-        vmax = np.nanmax(slice_data)
+        vmin, vmax = _get_valid_vmin_vmax(slice_data)
         image_display.set_data(slice_data)
         if state['scale'] == 'log':
             image_display.set_norm(LogNorm(vmin=vmin, vmax=vmax))

@@ -294,14 +294,17 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     lenslet_index_for_detailed_fit: int or None, optional (default None)
             If provided, display a detailed fit plot for the specified lenslet index.
     data_cube_bandpass_nm: two-element list/tuple or None, optional (default None)
-            Optional speed-up that limits the wavelength range of the reduction by shrinking the
+            Optional speed-up that limits the wavelength range actually fit by shrinking the
             wavelength axis of the main reduction loops. Specify as ``[bandpass_desired_min,
-            bandpass_desired_max]`` in nanometers. The final cube's wavelength bins will not land
-            exactly on these values, but the resulting cube bandpass is guaranteed to encompass the
-            requested range. Both endpoints must fall within the wavelength-calibration bandpass
-            (the full lamsol sweep range) or a ValueError is raised. Intended for testing, where the
-            illuminated bandpass is often much narrower than the full wavecal sweep that otherwise
-            sets the (expensive) wavelength-bin count.
+            bandpass_desired_max]`` in nanometers. The output cube keeps the full wavelength-axis
+            length of the calibration bandpass (``par.nlens``-independent; set by the wavecal sweep);
+            wavelength bins outside the requested range are not fit and are set to NaN (zero inverse
+            variance), matching the ``data_cube_ROI_side_length_lenslets`` NaN-padding convention
+            below. The bins that ARE fit will not land exactly on the requested endpoints, but the
+            fit range is guaranteed to encompass the requested range. Both endpoints must fall
+            within the wavelength-calibration bandpass (the full lamsol sweep range) or a ValueError
+            is raised. Intended for testing, where the illuminated bandpass is often much narrower
+            than the full wavecal sweep that otherwise sets the (expensive) wavelength-bin count.
     data_cube_ROI_side_length_lenslets: int or None, optional (default None)
             Optional speed-up that limits the spatial extent of the reduction to a square region of
             lenslets, centered on the center of the microlens array, by shrinking the lenslet grid
@@ -351,17 +354,22 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     # ambiguous, doing the repo-wide change is left for a later date.
     good = polychromekey[3].data
 
-    # Central/edge wavelengths of each output bin; one more edge than there are bins.
-    lam_midpts, lam_endpts = calculateWaveList(par, method='lstsq', num_wavelengths=psflets.shape[0] + 1)
+    # Central/edge wavelengths of each output bin; one more edge than there are bins. These span the
+    # full wavelength-calibration bandpass. The output cube always covers this full range -- see 1b.
+    lam_midpts_full, lam_endpts_full = calculateWaveList(par, method='lstsq', num_wavelengths=psflets.shape[0] + 1)
 
     # ------------------------------------------------------------------
     # 1b. Optional bandpass limiting (speed-up). By default the wavelength grid spans the full
     #     wavelength-calibration sweep, which sets the (expensive) number of wavelength bins N.
-    #     If the user supplies a narrower science bandpass, keep only the bins that overlap it,
-    #     shrinking N (and hence the polychrome cube, the per-lenslet fit, and the reconstruction).
+    #     If the user supplies a narrower science bandpass, only fit the bins that overlap it,
+    #     shrinking N (and hence the polychrome cube, the per-lenslet fit, and the reconstruction)
+    #     for speed. The *output* cube still spans the full calibration bandpass -- bins outside the
+    #     requested range are left as NaN flux / zero inverse-variance (see step 8) rather than
+    #     dropped, so the wavelength axis always matches lam_midpts_full and downstream tools that
+    #     expect one wavelength per plane (e.g. visualize_IFS_cube()) keep working unchanged.
     #     Bin i corresponds to psflets[i]/xindx[i]/yindx[i]/good[i] and edges
-    #     [lam_endpts[i], lam_endpts[i+1]]; the arrays are index-aligned along axis 0, so slicing
-    #     them together keeps everything consistent and the downstream code sizes itself off
+    #     [lam_endpts_full[i], lam_endpts_full[i+1]]; the arrays are index-aligned along axis 0, so
+    #     slicing them together keeps everything consistent and the downstream code sizes itself off
     #     psflets.shape[0] automatically.
     # ------------------------------------------------------------------
     if data_cube_bandpass_nm is not None:
@@ -372,8 +380,8 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                     data_cube_bandpass_nm))
 
         # The calibration bandpass is the full range covered by the wavelength solution.
-        calibration_bandpass_min = lam_endpts[0]
-        calibration_bandpass_max = lam_endpts[-1]
+        calibration_bandpass_min = lam_endpts_full[0]
+        calibration_bandpass_max = lam_endpts_full[-1]
         if (bandpass_desired_min < calibration_bandpass_min
                 or bandpass_desired_max > calibration_bandpass_max):
             raise ValueError(
@@ -384,21 +392,28 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
 
         # Choose the smallest contiguous set of bins whose combined range encompasses the desired
         # bandpass: the last edge at or below the desired minimum, through the first edge at or
-        # above the desired maximum. Bins bin_index_low .. bin_index_high-1 are kept.
-        bin_index_low = int(np.where(lam_endpts <= bandpass_desired_min)[0][-1])
-        bin_index_high = int(np.where(lam_endpts >= bandpass_desired_max)[0][0])
+        # above the desired maximum. Bins bin_index_low .. bin_index_high-1 are fit; the rest of the
+        # output cube's wavelength axis is left NaN (see step 8).
+        bin_index_low = int(np.where(lam_endpts_full <= bandpass_desired_min)[0][-1])
+        bin_index_high = int(np.where(lam_endpts_full >= bandpass_desired_max)[0][0])
 
         psflets = psflets[bin_index_low:bin_index_high]
         xindx = xindx[bin_index_low:bin_index_high]
         yindx = yindx[bin_index_low:bin_index_high]
         good = good[bin_index_low:bin_index_high]
-        lam_midpts = lam_midpts[bin_index_low:bin_index_high]
-        lam_endpts = lam_endpts[bin_index_low:bin_index_high + 1]
+        lam_midpts = lam_midpts_full[bin_index_low:bin_index_high]
+        lam_endpts = lam_endpts_full[bin_index_low:bin_index_high + 1]
 
         log.info(
-            "User's desired bandpass is [{}, {}] nm. Actual cube bandpass will be "
-            "[{:.2f}, {:.2f}] nm".format(
-                bandpass_desired_min, bandpass_desired_max, lam_endpts[0], lam_endpts[-1]))
+            "User's desired bandpass is [{}, {}] nm. Actual fit bandpass will be [{:.2f}, {:.2f}] "
+            "nm; the rest of the output cube ([{:.2f}, {:.2f}] nm) will be NaN.".format(
+                bandpass_desired_min, bandpass_desired_max, lam_endpts[0], lam_endpts[-1],
+                calibration_bandpass_min, calibration_bandpass_max))
+    else:
+        bin_index_low = 0
+        bin_index_high = psflets.shape[0]
+        lam_midpts = lam_midpts_full
+        lam_endpts = lam_endpts_full
 
     # ------------------------------------------------------------------
     # 2. Optionally append a flat "background" component to the basis so the
@@ -653,10 +668,10 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     t0 = time.perf_counter()
     if 'cubemode' not in par.hdr:
         par.hdr.append(('cubemode', 'Least squares', 'Method used to extract data cube'), end=True)
-        par.hdr.append(('lam_min', np.amin(lam_midpts), 'Minimum (central) wavelength of extracted cube'), end=True)
-        par.hdr.append(('lam_max', np.amax(lam_midpts), 'Maximum (central) wavelength of extracted cube'), end=True)
-        par.hdr.append(('dloglam', np.log(lam_midpts[1] / lam_midpts[0]), 'Log spacing of extracted wavelength bins'), end=True)
-        par.hdr.append(('nlam', lam_midpts.shape[0], 'Number of extracted wavelengths'), end=True)
+        par.hdr.append(('lam_min', np.amin(lam_midpts_full), 'Minimum (central) wavelength of extracted cube'), end=True)
+        par.hdr.append(('lam_max', np.amax(lam_midpts_full), 'Maximum (central) wavelength of extracted cube'), end=True)
+        par.hdr.append(('dloglam', np.log(lam_midpts_full[1] / lam_midpts_full[0]), 'Log spacing of extracted wavelength bins'), end=True)
+        par.hdr.append(('nlam', lam_midpts_full.shape[0], 'Number of extracted wavelengths'), end=True)
         par.hdr.append(('CTYPE1', 'RA---TAN', 'first parameter RA  ,  projection TANgential'), end=True)
         par.hdr.append(('CTYPE2', 'DEC--TAN', 'second parameter DEC,  projection TANgential'), end=True)
         par.hdr.append(('CRVAL1', 0., 'Reference X pixel value'), end=True)
@@ -673,8 +688,8 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         par.hdr.append(('CD2_2', np.cos(angle) * ypixscale, 'Rotation matrix coefficient'), end=True)
         par.hdr['CTYPE3'] = 'WAVE-LOG'
         par.hdr['CUNIT3'] = 'nm'
-        par.hdr['CRVAL3'] = lam_midpts[0]
-        par.hdr['CDELT3'] = np.log(lam_midpts[1] / lam_midpts[0]) * lam_midpts[len(lam_midpts) // 2]
+        par.hdr['CRVAL3'] = lam_midpts_full[0]
+        par.hdr['CDELT3'] = np.log(lam_midpts_full[1] / lam_midpts_full[0]) * lam_midpts_full[len(lam_midpts_full) // 2]
         par.hdr['CRPIX3'] = 1
 
     # ------------------------------------------------------------------
@@ -689,6 +704,19 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         dc_offset = cube[-1]
         cube = cube[:-1]
         ivarcube = ivarcube[:-1]
+
+    # If a narrower bandpass was fit than the full calibration range, embed the fit results back
+    # into a full-bandpass wavelength axis so the output cube always spans lam_midpts_full: bins
+    # outside the requested bandpass are left as NaN flux / zero inverse-variance. Do this before
+    # the lenslet_flat/lenslet_mask blocks below so their default (no-file) arrays -- sized off
+    # cube.shape -- match the full-size cube.
+    if data_cube_bandpass_nm is not None:
+        full_cube = np.full((lam_midpts_full.shape[0], par.nlens, par.nlens), np.nan)
+        full_ivarcube = np.zeros((lam_midpts_full.shape[0], par.nlens, par.nlens))
+        full_cube[bin_index_low:bin_index_high] = cube
+        full_ivarcube[bin_index_low:bin_index_high] = ivarcube
+        cube = full_cube
+        ivarcube = full_ivarcube
 
     if hasattr(par, 'lenslet_flat'):
         lenslet_flat = fits.open(par.lenslet_flat)[1].data
