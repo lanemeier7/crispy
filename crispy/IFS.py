@@ -784,11 +784,15 @@ def visualize_IFS_cube(cube_data, lam_midpts=None, scale='linear'):
         return cube_log[idx] if state['scale'] == 'log' else cube_data[idx]
 
     def _get_valid_vmin_vmax(slice_data):
-        """Compute vmin/vmax, handling all-NaN slices by returning safe defaults."""
+        """Compute vmin/vmax, handling all-NaN slices by returning safe defaults.
+
+        The fallback must be strictly positive: LogNorm raises "Invalid vmin or vmax"
+        for vmin <= 0, and this fallback is used for both linear and log scales.
+        """
         vmin_val = np.nanpercentile(slice_data, 1)
         vmax_val = np.nanmax(slice_data)
-        if not (np.isfinite(vmin_val) and np.isfinite(vmax_val)):
-            vmin_val, vmax_val = 0.0, 1.0
+        if not (np.isfinite(vmin_val) and np.isfinite(vmax_val)) or vmin_val >= vmax_val:
+            vmin_val, vmax_val = 1E-10, 1.0
         return vmin_val, vmax_val
 
     initial_data = _get_slice_data(initial_slice)
