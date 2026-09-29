@@ -2183,7 +2183,8 @@ def interpolate_lamsol_wavelengths(lamsol_df, target_wavelengths=None, lamsol_fi
 def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_directory=None, lamsol_fit_order=4,
                           sensor_dimensions=[6248, 4176], lenslets_to_plot=None,
                           sensor_regions_to_inspect=[[3124, 2088]], window_size=100,
-                          plotting_bounds_pixels=None):
+                          plotting_bounds_pixels=None, FOV_dimensions_to_overplot=[3074, 1862, 1862],
+                          illustrate_spectral_resolution=False):
     """
     Generate many plots that may be helpful for troubleshooting or visualizing
     the wavelength solution polynomial. 
@@ -2191,7 +2192,7 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
     Parameters:
     -----------
     wavelengths_to_plot : float or list
-        Wavelengths at which to display a dispersion map
+        Wavelengths at which to display a map of dispersion and spectral resolution
     nlens : int
         Number of lenslets along one dimension of the array
     lamsol_filepath : str
@@ -2217,6 +2218,18 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         Axis limits [xmin, xmax, ymin, ymax] for the dispersion scale maps (dispersion-at-wavelength
         and trace length plots). The colormap is also scaled to values that fall within this region.
         If None, uses the full sensor extent defined by sensor_dimensions.
+    FOV_dimensions_to_overplot : list[float, float, float] or None, optional
+        Circular field-of-view to overplot as an unfilled red circle on the detector-space maps
+        (dispersion, spectral trace length, trace clocking angle, and spectral resolution).
+        Given as [center_x, center_y, radius] in units of pixels. The circle is drawn whenever this
+        is not None; pass None to suppress it. Defaults to [3074, 1862, 1862].
+    illustrate_spectral_resolution : bool, optional
+        If True, produce a per-wavelength scatter plot of spectral resolution across the detector at
+        each wavelength in wavelengths_to_plot. Spectral resolution is computed as
+            R = lambda / delta_lambda,   with   delta_lambda = 2 * (dispersion at that wavelength).
+        NOTE: this equation does NOT account for the PSF/LSF size. For DST2 the LSF is < 2 pixels, so
+        the spectral element is clipped to 2 pixels (hence the factor of 2 above) to preserve
+        Nyquist-sampling assumptions. Default False.
 
     Returns:
     --------
@@ -2227,6 +2240,15 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
     """
     # Read in the lamsol data file
     lamsol_df = pd.read_csv(lamsol_filepath, delimiter=' ', engine='python', header=None)
+
+    # Helper to overplot the circular field-of-view (unfilled red circle) on detector-space maps.
+    # Drawn whenever FOV_dimensions_to_overplot is not None; FOV_dimensions_to_overplot is
+    # [center_x, center_y, radius] in pixels.
+    def _overlay_fov_circle(ax):
+        if FOV_dimensions_to_overplot is not None:
+            cx, cy, radius = FOV_dimensions_to_overplot  # pixels: [center_x, center_y, radius]
+            circle = plt.Circle((cx, cy), radius, fill=False, edgecolor='red', linewidth=2, label='Instrument FOV', zorder=5)
+            ax.add_patch(circle)
 
     # Intelligently guess the order of the polynomial fit from the number of coefficients 
     # Remember that the 0th column is not a coefficient, but a wavelength.
@@ -2287,16 +2309,70 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
         ax.set_xlabel('Detector X (pixels)')
         ax.set_ylabel('Detector Y (pixels)')
         ax.set_title(f'Dispersion at {wavelength} nm')
+        _overlay_fov_circle(ax)
+        if FOV_dimensions_to_overplot is not None:
+            ax.legend(loc='upper right', framealpha=1.0, facecolor='white', edgecolor='black')
         fig.tight_layout()
         plt.show(block=False)
         plt.pause(0.1)
-        
+
 
         if output_directory is not None:
             if not os.path.exists(output_directory):
                 os.makedirs(output_directory)
             filename = os.path.join(output_directory, f'dispersion_map_{wavelength}nm.png')
             fig.savefig(filename, dpi=300, bbox_inches='tight')
+
+    #########################################################################
+    # Display a spectral resolution map at each wavelength of interest
+    #########################################################################
+    # Spectral resolution is R = lambda / delta_lambda, where delta_lambda = 2 * (dispersion at that
+    # wavelength). NOTE: this does NOT account for the PSF/LSF size. For DST2 the LSF is < 2 pixels,
+    # so the spectral element is clipped to 2 pixels (the factor of 2 below) to preserve
+    # Nyquist-sampling assumptions.
+    if illustrate_spectral_resolution:
+        for wavelength in wavelengths_to_plot:
+            # Determine the x/y coordinates of the lenslets on the detector, at the wavelength closest to the desired wavelength
+            coefficients = lamsol_df.loc[(lamsol_df[0] - wavelength).abs().idxmin()].values[1:]
+            x_transformed, y_transformed = transform(lenslet_ind_x, lenslet_ind_y, order=order, coef=coefficients)
+            mask = (x_transformed >= 0) & (x_transformed < sensor_dimensions[0]) & \
+                (y_transformed >= 0) & (y_transformed < sensor_dimensions[1])
+
+            dx_dlambda, dy_dlambda = derivative_of_lamsol_at_wavelength(lenslet_ind_x, lenslet_ind_y, lamsol_df, wavelength, plot_mosaic=False, lamsol_fit_order=lamsol_fit_order)
+            dispersion_nm_per_pix = 1 / np.sqrt(dx_dlambda**2 + dy_dlambda**2)
+
+            # R = lambda / delta_lambda, with delta_lambda = 2 * dispersion (2-pixel spectral element).
+            delta_lambda = 2.0 * dispersion_nm_per_pix
+            spectral_resolution = wavelength / delta_lambda
+
+            bounds_mask = mask & \
+                (x_transformed >= xmin_plot) & (x_transformed <= xmax_plot) & \
+                (y_transformed >= ymin_plot) & (y_transformed <= ymax_plot)
+            vmin = spectral_resolution[bounds_mask].min() if bounds_mask.any() else None
+            vmax = spectral_resolution[bounds_mask].max() if bounds_mask.any() else None
+
+            fig, ax = plt.subplots(figsize=(6, 5))
+            scatter = ax.scatter(x_transformed[mask], y_transformed[mask], c=spectral_resolution[mask], s=20, vmin=vmin, vmax=vmax)
+            cbar = fig.colorbar(scatter, ax=ax)
+            cbar.set_label('Spectral Resolution (λ/Δλ)')
+            ax.set_xlim(xmin_plot, xmax_plot)
+            ax.set_ylim(ymin_plot, ymax_plot)
+            ax.set_aspect('equal')
+            ax.set_xlabel('Detector X (pixels)')
+            ax.set_ylabel('Detector Y (pixels)')
+            ax.set_title(f'Spectral Resolution at {wavelength} nm')
+            _overlay_fov_circle(ax)
+            if FOV_dimensions_to_overplot is not None:
+                ax.legend(loc='upper right', framealpha=1.0, facecolor='white', edgecolor='black')
+            fig.tight_layout()
+            plt.show(block=False)
+            plt.pause(0.1)
+
+            if output_directory is not None:
+                if not os.path.exists(output_directory):
+                    os.makedirs(output_directory)
+                filename = os.path.join(output_directory, f'spectral_resolution_map_{wavelength}nm.png')
+                fig.savefig(filename, dpi=300, bbox_inches='tight')
 
     #########################################################################
     # Plot dispersion vs. wavelength for one or more user-specified lenslets
@@ -2459,6 +2535,9 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
     ax.set_xlabel('Detector X (pixels)')
     ax.set_ylabel('Detector Y (pixels)')
     ax.set_title('Spectral Trace Clocking Angle')
+    _overlay_fov_circle(ax)
+    if FOV_dimensions_to_overplot is not None:
+        ax.legend(loc='upper right', framealpha=1.0, facecolor='white', edgecolor='black')
     fig.tight_layout()
     plt.show(block=False)
     plt.pause(0.1)
@@ -2494,6 +2573,9 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
     ax.set_xlabel('Detector X (pixels)')
     ax.set_ylabel('Detector Y (pixels)')
     ax.set_title(f'Spectral Trace Length\n[{wavelength_min} - {wavelength_max} nm]')
+    _overlay_fov_circle(ax)
+    if FOV_dimensions_to_overplot is not None:
+        ax.legend(loc='upper right', framealpha=1.0, facecolor='white', edgecolor='black')
     fig.tight_layout()
     plt.show(block=False)
     plt.pause(0.1)
