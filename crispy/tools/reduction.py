@@ -163,28 +163,13 @@ def calculateWaveList(par, lam_list=None, num_wavelengths=None, method='lstsq'):
         lamlist = lam_list
     if num_wavelengths is None:
         if method == 'lstsq':
-            num_wavelengths = int(
-                np.log(
-                    max(lamlist) /
-                    min(lamlist)) *
-                par.R *
-                par.nchanperspec_lstsq +
-                1)
+            num_wavelengths = int(np.log(max(lamlist) / min(lamlist)) * par.R * par.nchanperspec_lstsq + 1)
         else:
-            num_wavelengths = int(
-                np.log(
-                    max(lamlist) /
-                    min(lamlist)) *
-                par.R *
-                par.npixperdlam +
-                1)
+            num_wavelengths = int(np.log(max(lamlist) / min(lamlist)) * par.R * par.npixperdlam + 1)
     log.info('Reduced cube will have %d wavelength bins' % (num_wavelengths - 1))
 #     lam_endpts = np.linspace(min(lamlist), max(lamlist), num_wavelengths)
 #     lam_midpts = (lam_endpts[1:]+lam_endpts[:-1])/2.
-    loglam_endpts = np.linspace(
-        np.log(
-            min(lamlist)), np.log(
-            max(lamlist)), num_wavelengths)
+    loglam_endpts = np.linspace(np.log(min(lamlist)), np.log(max(lamlist)), num_wavelengths)
     loglam_midpts = (loglam_endpts[1:] + loglam_endpts[:-1]) / 2
     lam_endpts = np.exp(loglam_endpts)
     lam_midpts = np.exp(loglam_midpts)
@@ -1442,8 +1427,7 @@ def fitspec_intpix_np(
     try:
         sig = fits.open(os.path.join(par.wavecalDir, 'PSFwidths.fits'))[0].data
     except BaseException:
-        log.warning(
-            "No PSFLet widths found - assuming critical samping at central wavelength")
+        log.warning("No PSFLet widths found - assuming critical samping at central wavelength")
         sig = par.FWHM / 2.35 * np.ones(xindx.shape)
 
     img = im.data.copy()
@@ -1453,8 +1437,7 @@ def fitspec_intpix_np(
 
     ydim, xdim = img.shape
 
-    coefs = np.zeros(
-        tuple([max(Nmax, lamlist.shape[0])] + list(yindx.shape)[:-1]))
+    coefs = np.zeros(tuple([max(Nmax, lamlist.shape[0])] + list(yindx.shape)[:-1]))
     cube = np.zeros((len(lamlist), par.nlens, par.nlens))
     ivarcube = np.zeros((len(lamlist), par.nlens, par.nlens))
     xarr, yarr = np.meshgrid(np.arange(Nmax), np.arange(delt_y))
@@ -1495,29 +1478,16 @@ def fitspec_intpix_np(
                     data = img[i1:i1 + delt_y, int(_x[0]):int(_x[-1]) + 1]
 
                     if im.ivar is not None:
-                        ivar = im.ivar[i1:i1 + delt_y,
-                                       int(_x[0]):int(_x[-1]) + 1]
+                        ivar = im.ivar[i1:i1 + delt_y, int(_x[0]):int(_x[-1]) + 1]
                     else:
                         ivar = np.ones(data.shape)
 
-                    coefs[:len(_lam), i, j] = np.sum(
-                        weight * data * ivar, axis=0)
+                    coefs[:len(_lam), i, j] = np.sum(weight * data * ivar, axis=0)
                     if ~sum:
                         coefs[:len(_lam), i, j] /= np.sum(weight**2 * ivar, axis=0)
-                    tck = interpolate.splrep(
-                        _lam, coefs[:len(_lam), i, j], s=0, k=3)
+                    tck = interpolate.splrep(_lam, coefs[:len(_lam), i, j], s=0, k=3)
                     cube[:, j, i] = interpolate.splev(lamlist, tck, ext=1)
-                    tck = interpolate.splrep(
-                        _lam,
-                        np.sum(
-                            weight**2 *
-                            ivar,
-                            axis=0) /
-                        np.sum(
-                            weight**2,
-                            axis=0),
-                        s=0,
-                        k=3)
+                    tck = interpolate.splrep(_lam, np.sum(weight**2 * ivar, axis=0) / np.sum(weight**2, axis=0),s=0,k=3)
                     ivarcube[:, j, i] = interpolate.splev(lamlist, tck, ext=1)
                 else:
                     cube[:, j, i] = np.nan
@@ -1527,44 +1497,13 @@ def fitspec_intpix_np(
                 ivarcube[:, j, i] = 0.
 
     if 'cubemode' not in par.hdr:
-        par.hdr.append(
-            ('cubemode',
-             'Optimal Extraction',
-             'Method used to extract data cube'),
-            end=True)
-        par.hdr.append(
-            ('lam_min',
-             np.amin(lamlist),
-             'Minimum mid wavelength of extracted cube'),
-            end=True)
-        par.hdr.append(
-            ('lam_max',
-             np.amax(lamlist),
-             'Maximum mid wavelength of extracted cube'),
-            end=True)
-        par.hdr.append(
-            ('dloglam',
-             np.log(
-                 lamlist[1] /
-                 lamlist[0]),
-                'Log spacing of extracted wavelength bins'),
-            end=True)
-        par.hdr.append(
-            ('nlam',
-             lamlist.shape[0],
-             'Number of extracted wavelengths'),
-            end=True)
-
-        par.hdr.append(
-            ('CTYPE1',
-             'RA---TAN',
-             'first parameter RA  ,  projection TANgential'),
-            end=True)
-        par.hdr.append(
-            ('CTYPE2',
-             'DEC--TAN',
-             'second parameter DEC,  projection TANgential'),
-            end=True)
+        par.hdr.append(('cubemode', 'Optimal Extraction', 'Method used to extract data cube'), end=True)
+        par.hdr.append(('lam_min', np.amin(lamlist), 'Minimum mid wavelength of extracted cube'), end=True)
+        par.hdr.append(('lam_max', np.amax(lamlist), 'Maximum mid wavelength of extracted cube'), end=True)
+        par.hdr.append(('dloglam', np.log(lamlist[1] / lamlist[0]), 'Log spacing of extracted wavelength bins'), end=True)
+        par.hdr.append(('nlam', lamlist.shape[0], 'Number of extracted wavelengths'), end=True)
+        par.hdr.append(('CTYPE1', 'RA---TAN', 'first parameter RA  ,  projection TANgential'), end=True)
+        par.hdr.append(('CTYPE2', 'DEC--TAN', 'second parameter DEC,  projection TANgential'), end=True)
         par.hdr.append(('CRVAL1', 0., 'Reference X pixel value'), end=True)
         par.hdr.append(('CRVAL2', 0., 'Reference Y pixel value'), end=True)
         par.hdr.append(('CRPIX1', par.nlens // 2, 'Reference X pixel'), end=True)
@@ -1574,26 +1513,10 @@ def fitspec_intpix_np(
         angle = par.philens
         xpixscale = -0.01 / 3600.
         ypixscale = 0.01 / 3600.
-        par.hdr.append(
-            ('CD1_1',
-             np.cos(angle) *
-             xpixscale,
-             'Rotation matrix coefficient'),
-            end=True)
-        par.hdr.append(('CD1_2', -np.sin(angle) * xpixscale,
-                        'Rotation matrix coefficient'), end=True)
-        par.hdr.append(
-            ('CD2_1',
-             np.sin(angle) *
-             ypixscale,
-             'Rotation matrix coefficient'),
-            end=True)
-        par.hdr.append(
-            ('CD2_2',
-             np.cos(angle) *
-             ypixscale,
-             'Rotation matrix coefficient'),
-            end=True)
+        par.hdr.append(('CD1_1', np.cos(angle) * xpixscale, 'Rotation matrix coefficient'), end=True)
+        par.hdr.append(('CD1_2', -np.sin(angle) * xpixscale, 'Rotation matrix coefficient'), end=True)
+        par.hdr.append(('CD2_1', np.sin(angle) * ypixscale, 'Rotation matrix coefficient'), end=True)
+        par.hdr.append(('CD2_2', np.cos(angle) * ypixscale, 'Rotation matrix coefficient'), end=True)
         par.hdr['CTYPE3'] = 'WAVE-LOG'
         par.hdr['CUNIT3'] = 'nm'
         par.hdr['CRVAL3'] = lamlist[0]
@@ -1622,18 +1545,13 @@ def fitspec_intpix_np(
 
     if smoothandmask:
         if 'SMOOTHED' not in par.hdr:
-            par.hdr.append(
-                ('SMOOTHED', True, 'Cube smoothed over bad lenslets'), end=True)
+            par.hdr.append(('SMOOTHED', True, 'Cube smoothed over bad lenslets'), end=True)
         cube = Image(data=cube * lenslet_mask, ivar=ivarcube)
         # good = np.any(cube.data != 0, axis=0)
         cube = _smoothandmask(cube, np.ones(good.shape))
     else:
         if 'SMOOTHED' not in par.hdr:
-            par.hdr.append(
-                ('SMOOTHED',
-                 False,
-                 'Cube NOT smoothed over bad lenslets'),
-                end=True)
+            par.hdr.append(('SMOOTHED', False, 'Cube NOT smoothed over bad lenslets'),end=True)
         cube = Image(data=cube, ivar=ivarcube)
 
     cube = Image(
