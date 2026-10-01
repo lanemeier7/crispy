@@ -1573,6 +1573,25 @@ def buildcalibrations(
     ysize, xsize = Image(filename=filelist[0]).data.shape
     mask = np.ones((ysize, xsize))
 
+    # Fail fast on memory if the polychrome cube(s) requested below won't fit in RAM, rather
+    # than discovering this many minutes later after locatePSFlets/wavelength-solution/hires-PSFlet
+    # computation has already run. These trial arrays have the same shape/dtype as the ones
+    # actually allocated near the end of this function (see makePolychrome/makehiresPolychrome
+    # blocks); they are freed immediately so this check costs memory only momentarily.
+    if makePolychrome or makehiresPolychrome:
+        _num_bins = len(calculateWaveList(par, lamlist, method='lstsq')[1]) - 1
+        if makePolychrome:
+            log.info('Preflight check: trial-allocating polychrome cube of shape '
+                     f'({_num_bins}, {ysize}, {xsize}) float32...')
+            _trial = np.zeros((_num_bins, ysize, xsize), dtype=np.float32)
+            del _trial
+        if makehiresPolychrome:
+            log.info('Preflight check: trial-allocating hi-res polychrome cube of shape '
+                     f'({_num_bins}, {ysize * upsample}, {xsize * upsample}) float64...')
+            _trial = np.zeros((_num_bins, ysize * upsample, xsize * upsample))
+            del _trial
+        log.info('Preflight memory check passed.')
+
     # Define a a circular region inscribed in the mask
     if apodize:
         # Create coordinate grids centered at image center
@@ -1863,7 +1882,7 @@ def buildcalibrations(
         lam_midpts, lam_endpts = calculateWaveList(par, lam, method='lstsq')
         # TODO, rename all instances of 'num_wavelengths' to 'num_wavelengths' for clarity.
         num_wavelengths = len(lam_endpts)  # The number of unique wavelength bins
-        polyimage = np.zeros((num_wavelengths - 1, ysize, xsize))
+        polyimage = np.zeros((num_wavelengths - 1, ysize, xsize), dtype=np.float32)
 
         # Initialize some arrays where we will store information about the x/y position of each PSF,
         # as well as whether or not that PSF is "good" (i.e. falls on the detector)
