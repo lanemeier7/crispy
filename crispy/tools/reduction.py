@@ -1,5 +1,6 @@
 from astropy.io import fits
 import os
+import time
 import numpy as np
 from crispy.tools.initLogger import getLogger
 log = getLogger('crispy')
@@ -166,7 +167,7 @@ def calculateWaveList(par, lam_list=None, num_wavelengths=None, method='lstsq'):
             num_wavelengths = int(np.log(max(lamlist) / min(lamlist)) * par.R * par.nchanperspec_lstsq + 1)
         else:
             num_wavelengths = int(np.log(max(lamlist) / min(lamlist)) * par.R * par.npixperdlam + 1)
-    log.info('Reduced cube will have %d wavelength bins' % (num_wavelengths - 1))
+    log.info(f'Reduced cube will have {num_wavelengths - 1} wavelength bins between {min(lamlist)} and {max(lamlist)} nm')
 #     lam_endpts = np.linspace(min(lamlist), max(lamlist), num_wavelengths)
 #     lam_midpts = (lam_endpts[1:]+lam_endpts[:-1])/2.
     loglam_endpts = np.linspace(np.log(min(lamlist)), np.log(max(lamlist)), num_wavelengths)
@@ -180,7 +181,7 @@ def calculateWaveList(par, lam_list=None, num_wavelengths=None, method='lstsq'):
 def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                  hires=False, upsample=3, fitbkgnd=False,
                  specialPolychrome=None, returnall=False, mode='lstsq',
-                 niter=10, pixnoise=0.0, normpsflets=False, gain=1.0, show_fit_plots=False,
+                 niter=10, pixnoise=0.0, normpsflets=False, gain=1.0, show_chisq_plot=False,
                  lenslet_index_for_detailed_fit=None,
                  data_cube_bandpass_nm=None, data_cube_ROI_side_length_lenslets=None):
     '''
@@ -267,10 +268,10 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
             Detector gain (ADU/photoelectron). Applied to convert raw detector
             units to photoelectrons before fitting. Output is also converted
             back to detector units.
-    show_fit_plots: bool, optional (default False)
-            If True, display a plot of the microspectrum and the largest PSFlet components for each lenslet during the fit.
+    show_chisq_plot: bool, optional (default False)
+            If True, display a plot of the chisq fit for this raw image
     lenslet_index_for_detailed_fit: int or None, optional (default None)
-            If provided, display a detailed fit plot for the specified lenslet index.
+            If provided, display a detailed fit plot for the specified lenslet index, showing the wavelength bins with the most flux.
     data_cube_bandpass_nm: two-element list/tuple or None, optional (default None)
             Optional speed-up that limits the wavelength range actually fit by shrinking the
             wavelength axis of the main reduction loops. Specify as ``[bandpass_desired_min,
@@ -323,6 +324,11 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     # mask (True where the lenslet's spectrum falls on the detector). While the variable name is
     # ambiguous, doing the repo-wide change is left for a later date.
     good = polychromekey[3].data
+
+    # Everything above this point is loading (and, for the .fits.gz case, decompressing) the
+    # polychrome basis from disk. Start the clock here so the timing printout at the end of this
+    # function reflects only the reduction itself.
+    reduction_only_start = time.time()
 
     # Central/edge wavelengths of each output bin; one more edge than there are bins. These span the
     # full wavelength-calibration bandpass. The output cube always covers this full range -- see 1b.
@@ -555,7 +561,7 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
                 chisq[j, i] = np.nan
     
     # Show map of chisq values
-    if show_fit_plots:
+    if show_chisq_plot:
         fig, ax = plt.subplots()
         im = ax.imshow(chisq, origin='lower',vmin=np.nanpercentile(chisq, 1), vmax=np.nanpercentile(chisq, 99))
         fig.colorbar(im, ax=ax)
@@ -733,6 +739,10 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     if hires:
         Image(data=hires_model, header=par.hdr, extraheader=ifsimage.extraheader).write(
             name + '_hires_model.fits', overwrite=True)
+
+    reduction_only_elapsed = time.time() - reduction_only_start
+    log.info(f'Time spent performing lstsq reduction (not counting polychrome basis load time): '
+             f'{reduction_only_elapsed:.1f} seconds')
 
     if returnall:
         return cube, model, resid
@@ -1520,16 +1530,14 @@ def fitspec_intpix_np(
         par.hdr['CTYPE3'] = 'WAVE-LOG'
         par.hdr['CUNIT3'] = 'nm'
         par.hdr['CRVAL3'] = lamlist[0]
-        par.hdr['CDELT3'] = np.log(
-            lamlist[1] / lamlist[0]) * lamlist[len(lamlist) // 2]
+        par.hdr['CDELT3'] = np.log(lamlist[1] / lamlist[0]) * lamlist[len(lamlist) // 2]
         par.hdr['CRPIX3'] = 1
 
     if hasattr(par, 'lenslet_flat'):
         lenslet_flat = fits.open(par.lenslet_flat)[1].data
         lenslet_flat = lenslet_flat[np.newaxis, :]
         if "FLAT" not in par.hdr:
-            par.hdr.append(
-                ('FLAT', True, 'Applied lenslet flatfield'), end=True)
+            par.hdr.append(('FLAT', True, 'Applied lenslet flatfield'), end=True)
         cube *= lenslet_flat
         ivarcube /= lenslet_flat**2 + 1e-20
     else:

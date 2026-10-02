@@ -1970,7 +1970,7 @@ def buildcalibrations(
 
         log.info('Saving polychrome cube')
         polyimage[polyimage < threshold] = 0.0
-        out = fits.HDUList(fits.PrimaryHDU(polyimage.astype(np.float32)))
+        out = fits.HDUList(fits.PrimaryHDU(polyimage))
         out.writeto(f"{os.path.join(outdir, f'polychromeR{par.R}.fits.gz')}", overwrite=True)
         out = fits.HDUList(fits.PrimaryHDU(np.sum(polyimage, axis=0).astype(np.float32)))
         out.writeto(f"{os.path.join(outdir, f'polychromeR{par.R}stack.fits.gz')}", overwrite=True)
