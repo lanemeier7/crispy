@@ -263,6 +263,7 @@ def reduceIFSMap(
         name=None,
         hires=False,
         dy=3,
+        save_outputs=True,
         fitbkgnd=True,
         specialPolychrome=None,
         returnall=False,
@@ -307,6 +308,10 @@ def reduceIFSMap(
             Only used for the 'lstsq'-family methods. Half-width (in pixels) of the rectangular cutout extracted
             around each PSFlet in the polychrome image.
             #TODO, this is a good candidate variable for renaming repo-wide. Maybe "cutout_height_halfwidth"?
+    save_outputs: bool, optional (default True)
+            If True, write the extracted cube and associated products to disk as FITS files under
+            ``par.exportDir``. If False, skip all disk writes and only return the result in memory. Applies to
+            every extraction method.
     fitbkgnd: bool, optional (default True)
             Only used for the 'lstsq'-family methods. If True, fit a uniform ("DC") background offset under each
             microspectrum.
@@ -418,6 +423,7 @@ def reduceIFSMap(
             smoothandmask=smoothbad,
             hires=hires,
             dy=dy,
+            save_outputs=save_outputs,
             fitbkgnd=fitbkgnd,
             specialPolychrome=specialPolychrome,
             returnall=returnall,
@@ -426,18 +432,18 @@ def reduceIFSMap(
             pixnoise=pixnoise,
             normpsflets=normpsflets,
             gain=gain,
-            show_fit_plots=True,
+            show_chisq_plot=True,
             lenslet_index_for_detailed_fit=None,
             data_cube_bandpass_nm=data_cube_bandpass_nm,
             data_cube_ROI_side_length_lenslets=data_cube_ROI_side_length_lenslets)
     elif method == 'optext':
         log.info("Using optimal extraction method")
         reducedName += '_red_optext'
-        cube = intOptimalExtract(par, os.path.join(par.exportDir, reducedName), IFSimage, smoothandmask=smoothbad)
+        cube = intOptimalExtract(par, os.path.join(par.exportDir, reducedName), IFSimage, smoothandmask=smoothbad, save_outputs=save_outputs)
     elif method == 'sum':
         log.info("Using sum extraction method")
         reducedName += '_red_sum'
-        cube = intOptimalExtract(par, os.path.join(par.exportDir, reducedName), IFSimage, smoothandmask=smoothbad, sum=True)
+        cube = intOptimalExtract(par, os.path.join(par.exportDir, reducedName), IFSimage, smoothandmask=smoothbad, sum=True, save_outputs=save_outputs)
 
     else:
         log.info("Method not found")

@@ -179,7 +179,7 @@ def calculateWaveList(par, lam_list=None, num_wavelengths=None, method='lstsq'):
 
 
 def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
-                 hires=False, upsample=3, fitbkgnd=False,
+                 hires=False, upsample=3, save_outputs=True, fitbkgnd=False,
                  specialPolychrome=None, returnall=False, mode='lstsq',
                  niter=10, pixnoise=0.0, normpsflets=False, gain=1.0, show_chisq_plot=False,
                  lenslet_index_for_detailed_fit=None,
@@ -235,6 +235,11 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     upsample: int, optional (default 3)
             Upsampling factor for the hi-res reconstruction. Ignored if
             ``hires=False``.
+    save_outputs: bool, optional (default True)
+            If True, write the extracted cube and associated products (residual,
+            model, chi-squared, and optionally offsets/hi-res-model) to disk as FITS
+            files under ``name``. If False, skip all disk writes and only return the
+            results in memory.
     fitbkgnd: bool, optional (default False)
             If True, fit a uniform ("DC") background offset under each
             microspectrum. The offsets are saved separately
@@ -718,27 +723,30 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
     #    variance extensions), plus separate residual, model, chi-squared,
     #    and (optionally) background-offset / hi-res-model images.
     # ------------------------------------------------------------------
-    log.info('  Writing the extracted cube and associated products to disk')
-    # Image(data=cube.data,ivar=ivarcube,header=par.hdr,extraheader=ifsimage.extraheader).write(name+'.fits',overwrite=True)
-    out = fits.HDUList(fits.PrimaryHDU(None, par.hdr))
-    out.append(fits.PrimaryHDU(cube.data, par.hdr))
-    out.append(fits.PrimaryHDU(cube.ivar, par.hdr))
-    out.append(fits.PrimaryHDU(None, ifsimage.extraheader))
-    if fitbkgnd:
-        out.append(fits.PrimaryHDU(dc_offset, par.hdr))
-    out.writeto(name + '.fits', overwrite=True)
+    if save_outputs:
+        log.info('  Writing the extracted cube and associated products to disk')
+        # Image(data=cube.data,ivar=ivarcube,header=par.hdr,extraheader=ifsimage.extraheader).write(name+'.fits',overwrite=True)
+        out = fits.HDUList(fits.PrimaryHDU(None, par.hdr))
+        out.append(fits.PrimaryHDU(cube.data, par.hdr))
+        out.append(fits.PrimaryHDU(cube.ivar, par.hdr))
+        out.append(fits.PrimaryHDU(None, ifsimage.extraheader))
+        if fitbkgnd:
+            out.append(fits.PrimaryHDU(dc_offset, par.hdr))
+        out.writeto(name + '.fits', overwrite=True)
 
-    Image(data=resid, header=par.hdr, extraheader=ifsimage.extraheader).write(
-        name + '_resid.fits', overwrite=True)
-    Image(data=model, header=par.hdr, extraheader=ifsimage.extraheader).write(
-        name + '_model.fits', overwrite=True)
-    Image(data=chisq, header=par.hdr).write(name + '_chisq.fits', overwrite=True)
-    if fitbkgnd:
-        Image(data=dc_offset, header=par.hdr, extraheader=ifsimage.extraheader).write(
-            name + '_offsets.fits', overwrite=True)
-    if hires:
-        Image(data=hires_model, header=par.hdr, extraheader=ifsimage.extraheader).write(
-            name + '_hires_model.fits', overwrite=True)
+        Image(data=resid, header=par.hdr, extraheader=ifsimage.extraheader).write(
+            name + '_resid.fits', overwrite=True)
+        Image(data=model, header=par.hdr, extraheader=ifsimage.extraheader).write(
+            name + '_model.fits', overwrite=True)
+        Image(data=chisq, header=par.hdr).write(name + '_chisq.fits', overwrite=True)
+        if fitbkgnd:
+            Image(data=dc_offset, header=par.hdr, extraheader=ifsimage.extraheader).write(
+                name + '_offsets.fits', overwrite=True)
+        if hires:
+            Image(data=hires_model, header=par.hdr, extraheader=ifsimage.extraheader).write(
+                name + '_hires_model.fits', overwrite=True)
+    else:
+        log.info('  save_outputs=False: skipping disk writes of the extracted cube and associated products')
 
     reduction_only_elapsed = time.time() - reduction_only_start
     log.info(f'Time spent performing lstsq reduction (not counting polychrome basis load time): '
@@ -1212,7 +1220,7 @@ def _tag_hires_psflets(shape, x, y, good, dx=10, dy=10, upsample=3, npix=13):
     return psflet_indx
 
 
-def intOptimalExtract(par, name, IFSimage, smoothandmask=True, sum=False):
+def intOptimalExtract(par, name, IFSimage, smoothandmask=True, sum=False, save_outputs=True):
     """
     Calls the optimal extraction routine
 
@@ -1224,6 +1232,9 @@ def intOptimalExtract(par, name, IFSimage, smoothandmask=True, sum=False):
             Path & name of the output file
     IFSimage: Image instance
             Image instance of input image. Can have a .ivar field for a variance map.
+    save_outputs: bool, optional (default True)
+            If True, write the extracted cube to disk as a FITS file at ``name``. If
+            False, skip the disk write and only return the result in memory.
 
     Return
     ------
@@ -1250,12 +1261,15 @@ def intOptimalExtract(par, name, IFSimage, smoothandmask=True, sum=False):
         smoothandmask=smoothandmask,
         sum=sum)
 
-    # datacube.write(name+'.fits',overwrite=True)
-    out = fits.HDUList(fits.PrimaryHDU(None, par.hdr))
-    out.append(fits.PrimaryHDU(datacube.data, par.hdr))
-    out.append(fits.PrimaryHDU(datacube.ivar, par.hdr))
-    out.append(fits.PrimaryHDU(None, datacube.extraheader))
-    out.writeto(name + '.fits', overwrite=True)
+    if save_outputs:
+        # datacube.write(name+'.fits',overwrite=True)
+        out = fits.HDUList(fits.PrimaryHDU(None, par.hdr))
+        out.append(fits.PrimaryHDU(datacube.data, par.hdr))
+        out.append(fits.PrimaryHDU(datacube.ivar, par.hdr))
+        out.append(fits.PrimaryHDU(None, datacube.extraheader))
+        out.writeto(name + '.fits', overwrite=True)
+    else:
+        log.info('  save_outputs=False: skipping disk write of the extracted cube')
 
     return datacube
 

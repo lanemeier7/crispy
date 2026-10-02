@@ -68,9 +68,9 @@ class Params(object):
 
         self.distortPISCES = False  # If True, use measured PISCES distortion/dispersion
         self.BW = 0.18              # Spectral bandwidth (if distortPISCES==False)
-        self.npixperdlam = 2.0      # Number of pixels per spectral resolution element
-        self.nchanperspec_lstsq = 2.0  # num_wavelengths per pixel for least squares
-        self.R = 120                 # Spectral resolving power
+        self.npixperdlam = 2.0      # Number of pixels per spectral resolution element, used for the 'optext' method
+        self.nchanperspec_lstsq = 2.0  # num_wavelengths per pixel for least squares, used for the 'lstsq' method
+        self.R = 125                 # Spectral resolving power
 
         # carry-over old parameter names
         self.lenslet_wav = self.lenslet_wav
