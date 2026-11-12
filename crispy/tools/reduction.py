@@ -317,7 +317,11 @@ def lstsqExtract(par, name, ifsimage, smoothandmask=True, ivar=True, dy=3,
         try:
             polychromeR = fits.open(os.path.join(par.wavecalDir, 'polychromeR%d.fits.gz' % (par.R)))
         except BaseException:
-            polychromeR = fits.open(os.path.join(par.wavecalDir,'polychromeR%d.fits' % (par.R)))
+            try:
+                polychromeR = fits.open(os.path.join(par.wavecalDir,'polychromeR%d.fits' % (par.R)))
+            except BaseException:
+                warnings.warn("Could not find polychrome file. Perhaps you haven't processed the calibration data at this particular spectral resolution yet?")
+                raise
         psflets = polychromeR[0].data
     else:
         psflets = specialPolychrome.copy()

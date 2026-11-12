@@ -1070,9 +1070,9 @@ def locatePSFlets(inImage, mask, polyorder=2, sig=0.7, coef=None, trimfrac=0.1,
         # Define a new windowed image that contains this PSFlet, along with the one to its right, above, and above-right.
         # So this windowed image should contain precisely 4 PSFlets. We will use this image to estimate the coefficients that affect shear.
         border_offset = scale // 2 - 1
-        xmin = np.min([peak_x - scale * np.sin(phi) , peak_x]) - border_offset
+        xmin = np.min([peak_x - scale * np.sin(phi) , peak_x]) - border_offset + 1
         xmax = peak_x + np.max([scale*(np.cos(phi) - np.sin(phi)),scale*np.cos(phi)]) + border_offset
-        y_min = np.min([peak_y + scale * np.sin(phi) , peak_y]) - border_offset
+        y_min = np.min([peak_y + scale * np.sin(phi) , peak_y]) - border_offset + 1
         y_max = peak_y + np.max([scale*(np.cos(phi)+np.sin(phi)),scale*np.cos(phi)]) + border_offset
         subfiltered_sub = subfiltered[int(y_min):int(y_max), int(xmin):int(xmax)]
         peaks = find_peaks(subfiltered_sub, threshold = np.max(subfiltered_sub) / 2, centroid_func=centroid_2dg)
