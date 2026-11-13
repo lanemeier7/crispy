@@ -1326,9 +1326,9 @@ def evaluate_dispersion_solution_fit_quality(image_data, x_calc, y_calc,
         # ===== TEMPORARY: remove when psflet-position modeling effort is done, but keep for posterity =====
         # Export the underlying per-peak (x, y, fit_error) data to a CSV, in pixel units, to support
         # ongoing work on improved models of PSFlet position derived from the dispersion polynomial.
-        csv_filename = os.path.join(output_directory, f'fit_quality{suffix}.csv')
-        pd.DataFrame({'x': x_peak, 'y': y_peak, 'fit_error': distances}).to_csv(csv_filename, index=False)
-        log.info(f'Saved fit-quality data table to {csv_filename}')
+        # csv_filename = os.path.join(output_directory, f'fit_quality{suffix}.csv')
+        # pd.DataFrame({'x': x_peak, 'y': y_peak, 'fit_error': distances}).to_csv(csv_filename, index=False)
+        # log.info(f'Saved fit-quality data table to {csv_filename}')
         # ===== END TEMPORARY =====
 
 
@@ -2379,7 +2379,7 @@ def illustrate_dispersion(wavelengths_to_plot, lamsol_filepath, nlens, output_di
             ax.set_aspect('equal')
             ax.set_xlabel('Detector X (pixels)')
             ax.set_ylabel('Detector Y (pixels)')
-            ax.set_title(f'Spectral Resolution at {wavelength} nm')
+            ax.set_title(f'DST2 IFS\nSpectral Resolution at {wavelength} nm')
             _overlay_fov_circle(ax)
             if FOV_dimensions_to_overplot is not None:
                 ax.legend(loc='upper right', framealpha=1.0, facecolor='white', edgecolor='black')

@@ -59,7 +59,7 @@ class Params(object):
         self.FWHM = 2               # FWHM at detector plane (detector pixels)
         self.FWHMlam = 660.         # Wavelength at which FWHM is defined (nm)
         self.gaussian = False        # Use standard Gaussian kernels instead of library
-        self.gaussian_hires = True  # Use Gaussians for hires PSFLet matching instead of Lucy-Richardson deconvolution
+        self.gaussian_hires = False  # Use Gaussians for hires PSFLet matching instead of Lucy-Richardson deconvolution
 
         self.RN = 0.2               # FWHM of gaussian kernel
         self.CIC = 1e-3             # Lam at which FWHM is defined
